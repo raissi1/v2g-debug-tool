@@ -1,9 +1,9 @@
-# fichiers binaires
+# Ignore local data
 *.pcap
 *.zip
 *.gz
 *.dxd
 *.csv
-
-# dossier samples (données locales)
-samples/*
+__pycache__/
+*.pyc
+.env
