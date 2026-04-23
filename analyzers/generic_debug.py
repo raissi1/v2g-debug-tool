@@ -8,8 +8,16 @@ import pandas as pd
 REQUIRED_COLUMNS = {"timestamp", "source", "event_type", "message", "payload"}
 
 
+def _top_messages(frame: pd.DataFrame, event_type: str, limit: int = 3) -> str:
+    subset = frame[frame["event_type"] == event_type]
+    if subset.empty:
+        return "aucun"
+    counts = subset["message"].value_counts().head(limit)
+    return " | ".join(f"{msg[:120]} ({count})" for msg, count in counts.items())
+
+
 def summarize_session(timeline: pd.DataFrame) -> list[str]:
-    """Return a concise textual summary of a reconstructed session."""
+    """Return an improved generic V2G debug summary from a reconstructed timeline."""
     if timeline.empty:
         return ["Aucun événement détecté dans la session."]
 
@@ -18,21 +26,28 @@ def summarize_session(timeline: pd.DataFrame) -> list[str]:
         return [f"Timeline invalide: colonnes manquantes {sorted(missing_cols)}"]
 
     lines: list[str] = []
-    lines.append(f"Nombre total d'événements: {len(timeline)}")
-
-    sources = timeline["source"].value_counts().to_dict()
-    top_sources = ", ".join(f"{name} ({count})" for name, count in list(sources.items())[:5])
-    lines.append(f"Sources principales: {top_sources}")
+    lines.append(f"Nombre total d'événements (fenêtre utile): {len(timeline)}")
 
     ts = pd.to_datetime(timeline["timestamp"], utc=True, errors="coerce").dropna()
     if not ts.empty:
-        lines.append(f"Fenêtre temporelle: {ts.min().isoformat()} → {ts.max().isoformat()}")
-        lines.append(f"Durée approximative: {ts.max() - ts.min()}")
+        lines.append(f"Plage temporelle utile: {ts.min().isoformat()} → {ts.max().isoformat()}")
+        lines.append(f"Durée utile approximative: {ts.max() - ts.min()}")
     else:
-        lines.append("Aucun timestamp exploitable trouvé.")
+        lines.append("Plage temporelle utile: timestamps non disponibles.")
+
+    lines.append(f"Erreurs principales: {_top_messages(timeline, 'error')}")
+    lines.append(f"Warnings principaux: {_top_messages(timeline, 'warning')}")
+    lines.append(f"Événements GridCodes: {_top_messages(timeline, 'gridcodes')}")
+    lines.append(f"Changements de setpoint: {_top_messages(timeline, 'setpoint_change')}")
+    lines.append(f"Limitations détectées: {_top_messages(timeline, 'power_limit')}")
+
+    timeout_count = int((timeline["event_type"] == "timeout").sum())
+    protocol_count = int((timeline["event_type"] == "protocol_event").sum())
+    lines.append(f"Timeouts détectés: {timeout_count}")
+    lines.append(f"Événements protocole détectés: {protocol_count}")
 
     event_types = timeline["event_type"].value_counts().to_dict()
-    top_types = ", ".join(f"{name} ({count})" for name, count in list(event_types.items())[:5])
-    lines.append(f"Types d'événements: {top_types}")
+    top_types = ", ".join(f"{name} ({count})" for name, count in list(event_types.items())[:8])
+    lines.append(f"Répartition des types: {top_types}")
 
     return lines

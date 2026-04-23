@@ -20,6 +20,7 @@ class DetectedFiles:
     pcaps: list[Path] = field(default_factory=list)
     measures: list[Path] = field(default_factory=list)
     logs: list[Path] = field(default_factory=list)
+    configs: list[Path] = field(default_factory=list)
     others: list[Path] = field(default_factory=list)
 
     def all_text_logs(self) -> list[Path]:
@@ -42,6 +43,7 @@ class DetectedFiles:
             "pcaps": [str(p) for p in self.pcaps],
             "measures": [str(p) for p in self.measures],
             "logs": [str(p) for p in self.logs],
+            "configs": [str(p) for p in self.configs],
             "others": [str(p) for p in self.others],
         }
 
