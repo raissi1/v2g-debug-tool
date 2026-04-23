@@ -45,29 +45,6 @@ class DetectedFiles:
             "others": [str(p) for p in self.others],
         }
 
-    def all_text_logs(self) -> list[Path]:
-        """Return deduplicated list of text logs to parse into timeline events."""
-        ordered = [*self.energy_manager, *self.charger_app, *self.iotc_meter_dispatcher, *self.logs]
-        seen: set[Path] = set()
-        unique: list[Path] = []
-        for path in ordered:
-            if path not in seen:
-                unique.append(path)
-                seen.add(path)
-        return unique
-
-    def to_summary(self) -> dict[str, Any]:
-        return {
-            "root": str(self.root),
-            "energy_manager": [str(p) for p in self.energy_manager],
-            "charger_app": [str(p) for p in self.charger_app],
-            "iotc_meter_dispatcher": [str(p) for p in self.iotc_meter_dispatcher],
-            "pcaps": [str(p) for p in self.pcaps],
-            "measures": [str(p) for p in self.measures],
-            "logs": [str(p) for p in self.logs],
-            "others": [str(p) for p in self.others],
-        }
-
 
 @dataclass
 class Event:
