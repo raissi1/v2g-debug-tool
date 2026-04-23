@@ -16,14 +16,38 @@ from utils.zip_loader import extract_zip_to_temp
 
 st.set_page_config(page_title="V2G Debug Tool", layout="wide")
 st.title("V2G Session Debugger")
-st.caption(
-    "Chargez un dossier de session ou un ZIP pour reconstruire la chronologie et accélérer le diagnostic."
-)
+st.caption("Analyse d'une session à partir d'un dossier local ou d'un fichier ZIP.")
+
+
+def _resolve_input_source(
+    input_mode: str,
+    folder_path: str,
+    uploaded_zip,
+) -> tuple[Path, tempfile.TemporaryDirectory[str] | None]:
+    """Return the session directory to analyze and optional temp directory."""
+    if input_mode == "Dossier local":
+        if not folder_path:
+            raise ValueError("Veuillez indiquer un chemin local vers un dossier de session.")
+        session_dir = Path(folder_path).expanduser().resolve()
+        if not session_dir.is_dir():
+            raise ValueError(f"Dossier introuvable: {session_dir}")
+        return session_dir, None
+
+    if uploaded_zip is None:
+        raise ValueError("Veuillez charger un fichier ZIP de session.")
+
+    temp_dir = tempfile.TemporaryDirectory(prefix="v2g_session_")
+    zip_path = Path(temp_dir.name) / uploaded_zip.name
+    with zip_path.open("wb") as out:
+        out.write(uploaded_zip.getvalue())
+
+    extracted_dir = extract_zip_to_temp(zip_path, Path(temp_dir.name))
+    return extracted_dir, temp_dir
 
 
 with st.sidebar:
     st.header("Entrée")
-    input_mode = st.radio("Type de source", ["Dossier local", "Fichier ZIP"], index=1)
+    input_mode = st.radio("Type de source", ["Fichier ZIP", "Dossier local"], index=0)
 
     folder_path = ""
     uploaded_zip = None
@@ -40,37 +64,18 @@ with st.sidebar:
 
 
 if st.button("Analyser", type="primary"):
-    work_dir: Path | None = None
     temp_dir: tempfile.TemporaryDirectory[str] | None = None
-
     try:
-        if input_mode == "Dossier local":
-            if not folder_path:
-                st.error("Veuillez indiquer un dossier.")
-                st.stop()
-            work_dir = Path(folder_path).expanduser().resolve()
-            if not work_dir.is_dir():
-                st.error(f"Le dossier n'existe pas: {work_dir}")
-                st.stop()
-        else:
-            if uploaded_zip is None:
-                st.error("Veuillez charger un fichier ZIP.")
-                st.stop()
-            temp_dir = tempfile.TemporaryDirectory(prefix="v2g_session_")
-            zip_path = Path(temp_dir.name) / uploaded_zip.name
-            with zip_path.open("wb") as out:
-                out.write(uploaded_zip.getvalue())
-            work_dir = extract_zip_to_temp(zip_path, Path(temp_dir.name))
+        session_dir, temp_dir = _resolve_input_source(input_mode, folder_path, uploaded_zip)
 
-        detected = detect_session_files(work_dir)
+        detected = detect_session_files(session_dir)
         session_df = build_session_timeline(detected)
 
         st.subheader("Fichiers détectés")
         st.json(detected.to_summary())
 
         st.subheader("Analyse")
-        summary = summarize_session(session_df)
-        for line in summary:
+        for line in summarize_session(session_df):
             st.write(f"- {line}")
 
         st.subheader("Timeline")
@@ -79,26 +84,23 @@ if st.button("Analyser", type="primary"):
         else:
             st.dataframe(session_df, use_container_width=True)
 
-            csv_bytes = session_df.to_csv(index=False).encode("utf-8")
             st.download_button(
                 "Télécharger la timeline (CSV)",
-                data=csv_bytes,
+                data=session_df.to_csv(index=False).encode("utf-8"),
                 file_name="v2g_session_timeline.csv",
                 mime="text/csv",
             )
 
             with st.expander("Statistiques rapides"):
-                st.write("Événements par source")
                 counts = session_df["source"].value_counts().rename_axis("source").reset_index(name="count")
                 st.dataframe(counts, use_container_width=True)
 
-                if "timestamp" in session_df.columns:
-                    ts = pd.to_datetime(session_df["timestamp"], utc=True, errors="coerce").dropna()
-                    if not ts.empty:
-                        duration = ts.max() - ts.min()
-                        st.metric("Durée couverte", str(duration))
+                ts = pd.to_datetime(session_df.get("timestamp"), utc=True, errors="coerce").dropna()
+                if not ts.empty:
+                    st.metric("Durée couverte", str(ts.max() - ts.min()))
 
     except Exception as exc:  # noqa: BLE001
+        st.error(str(exc))
         st.exception(exc)
     finally:
         if temp_dir is not None:
@@ -106,4 +108,4 @@ if st.button("Analyser", type="primary"):
 
 
 st.markdown("---")
-st.caption("Python 3.11 • Streamlit • pandas • Architecture modulaire")
+st.caption("Détection automatique: EnergyManager • ChargerApp • iotc-meter-dispatcher • PCAP • mesures")

@@ -104,7 +104,7 @@ def build_session_timeline(detected: DetectedFiles) -> pd.DataFrame:
     """Create a timeline DataFrame ordered by timestamp when available."""
     events: list[Event] = []
 
-    for log in detected.logs:
+    for log in detected.all_text_logs():
         events.extend(_events_from_log(log))
     for measure in detected.measures:
         events.extend(_events_from_measure(measure))
