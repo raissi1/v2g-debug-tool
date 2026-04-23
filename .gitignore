@@ -1,0 +1,9 @@
+# fichiers binaires
+*.pcap
+*.zip
+*.gz
+*.dxd
+*.csv
+
+# dossier samples (données locales)
+samples/*
