@@ -45,12 +45,6 @@ class DetectedFiles:
             "others": [str(p) for p in self.others],
         }
 
-
-    pcaps: list[Path] = field(default_factory=list)
-    measures: list[Path] = field(default_factory=list)
-    logs: list[Path] = field(default_factory=list)
-    others: list[Path] = field(default_factory=list)
-
     def all_text_logs(self) -> list[Path]:
         """Return deduplicated list of text logs to parse into timeline events."""
         ordered = [*self.energy_manager, *self.charger_app, *self.iotc_meter_dispatcher, *self.logs]
@@ -75,7 +69,7 @@ class DetectedFiles:
         }
 
 
-@dataclass(slots=True)
+@dataclass
 class Event:
     """Canonical timeline event shared by all parsers."""
 
