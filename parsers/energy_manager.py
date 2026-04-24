@@ -30,6 +30,10 @@ PHYSICAL_PATTERNS = {
     "Q": [re.compile(rf"(?:q\s*meas(?:ured)?|reactive\s*power)\D{{0,12}}{NUMBER}", re.IGNORECASE)],
     "U": [re.compile(rf"(?:voltage|tension|\bu\b)\D{{0,12}}{NUMBER}", re.IGNORECASE)],
     "AvailableDischargePower": [re.compile(rf"(?:availabledischargepower|available\s*discharge\s*power)\D{{0,12}}{NUMBER}", re.IGNORECASE)],
+    "Pcalc": [re.compile(rf"(?:recalculated\s*setpoint\s*p|calculated\s*p|pcalc)\D{{0,12}}{NUMBER}", re.IGNORECASE)],
+    "Qcalc": [re.compile(rf"(?:recalculated\s*setpoint\s*q|calculated\s*q|qcalc)\D{{0,12}}{NUMBER}", re.IGNORECASE)],
+    "Smax": [re.compile(rf"(?:smax|max\s*apparent\s*power)\D{{0,12}}{NUMBER}", re.IGNORECASE)],
+    "derating": [re.compile(rf"(?:derating|derate|limit\s*factor)\D{{0,12}}{NUMBER}", re.IGNORECASE)],
 }
 STATE_PATTERNS = [
     ("start", re.compile(r"session\s*start|start\s*session|charging\s*started", re.IGNORECASE)),
@@ -75,6 +79,8 @@ def _physical_event_type(signals: dict[str, float | str]) -> str | None:
         return "state_change"
     if "Ptarget" in signals or "Qtarget" in signals:
         return "setpoint"
+    if any(k in signals for k in ("Smax", "derating", "Pcalc", "Qcalc")):
+        return "power_limit"
     if any(k in signals for k in ("P", "Q", "U", "AvailableDischargePower")):
         return "physical_measurement"
     return None

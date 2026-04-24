@@ -29,6 +29,7 @@ PHYSICAL_PATTERNS = {
     "P": [re.compile(rf"(?:p\s*meas(?:ured)?|measured\s*power|active\s*power)\D{{0,12}}{NUMBER}", re.IGNORECASE)],
     "Q": [re.compile(rf"(?:q\s*meas(?:ured)?|reactive\s*power)\D{{0,12}}{NUMBER}", re.IGNORECASE)],
     "U": [re.compile(rf"(?:voltage|tension|\bu\b)\D{{0,12}}{NUMBER}", re.IGNORECASE)],
+    "frequency": [re.compile(rf"(?:freq(?:uency)?|\bhz\b)\D{{0,12}}{NUMBER}", re.IGNORECASE)],
     "AvailableDischargePower": [re.compile(rf"(?:availabledischargepower|available\s*discharge\s*power)\D{{0,12}}{NUMBER}", re.IGNORECASE)],
 }
 STATE_PATTERNS = [
@@ -61,6 +62,23 @@ def _extract_physical_signals(line: str) -> dict[str, float | str]:
                 if value is not None:
                     signals[key] = value
                     break
+
+
+    # Slice parser: e.g. "Slice ... P=12.3 Q=-1.2 U=229.8 F=50.0"
+    slice_match = re.search(r"slice[^\n]*", line, re.IGNORECASE)
+    if slice_match:
+        slice_text = slice_match.group(0)
+        for key, pattern in {
+            "P": re.compile(rf"\bP\s*[=:]\s*{NUMBER}", re.IGNORECASE),
+            "Q": re.compile(rf"\bQ\s*[=:]\s*{NUMBER}", re.IGNORECASE),
+            "U": re.compile(rf"\bU\s*[=:]\s*{NUMBER}", re.IGNORECASE),
+            "frequency": re.compile(rf"(?:\bF\b|freq(?:uency)?)\s*[=:]\s*{NUMBER}", re.IGNORECASE),
+        }.items():
+            m = pattern.search(slice_text)
+            if m:
+                value = _to_float(m.group(1))
+                if value is not None:
+                    signals[key] = value
 
     for state_name, pattern in STATE_PATTERNS:
         if pattern.search(line):
