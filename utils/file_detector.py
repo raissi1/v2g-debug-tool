@@ -10,7 +10,7 @@ from core.models import DetectedFiles
 ALLOWED_AUX_DIRS = {"ChargerApp", "EnergyManager", "iotc-meter-dispatcher", "netlogger"}
 CONFIG_EXTENSIONS = {".properties", ".conf", ".ini", ".yaml", ".yml", ".json", ".xml", ".cfg"}
 
-LOG_PATTERN = re.compile(r".+\.log(?:\..+)?\.gz$", re.IGNORECASE)
+LOG_PATTERN = re.compile(r".+\.log(?:\..+)?(?:\.gz)?$", re.IGNORECASE)
 NETLOGGER_LOG_PATTERN = re.compile(r"^netlogger\.log(?:\..+)?\.gz$", re.IGNORECASE)
 
 
@@ -35,6 +35,11 @@ def _is_config_file(path: Path) -> bool:
 def _is_log_file(name: str) -> bool:
     lower = name.lower()
     return lower.endswith(".log") or LOG_PATTERN.fullmatch(lower) is not None
+
+
+def _looks_like_component_log_name(name: str) -> bool:
+    lower = name.lower()
+    return any(token in lower for token in ("chargerapp", "energymanager", "iotc-meter-dispatcher", "meter-dispatcher", "meter_dispatcher"))
 
 
 def _is_pcap_file(name: str) -> bool:
@@ -162,7 +167,7 @@ def detect_session_files(root: Path) -> DetectedFiles:
         if folder_type == "log":
             if _is_config_file(path):
                 detected.ignored_files.append(path)
-            elif _is_log_file(path.name):
+            elif _is_log_file(path.name) or _looks_like_component_log_name(path.name):
                 low = path.name.lower()
                 if "charg" in low:
                     detected.charger_app.append(path)
