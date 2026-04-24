@@ -6,23 +6,7 @@ import pandas as pd
 import plotly.graph_objects as go
 
 
-SIGNALS = [
-    "P",
-    "Q",
-    "S",
-    "U",
-    "U_avg",
-    "U_phase_A",
-    "U_phase_B",
-    "U_phase_C",
-    "I_A",
-    "I_phase_A",
-    "I_phase_B",
-    "I_phase_C",
-    "frequency_Hz",
-    "Ptarget",
-    "Qtarget",
-]
+SIGNALS = ["Ptarget", "P_meter", "P_dewesoft", "Qtarget", "Q_meter", "Q_dewesoft", "U_meter", "U_dewesoft", "frequency_meter", "frequency_dewesoft"]
 
 
 def build_signal_figure(timeseries: pd.DataFrame) -> go.Figure:
@@ -42,5 +26,10 @@ def build_signal_figure(timeseries: pd.DataFrame) -> go.Figure:
                 )
             )
 
-    fig.update_layout(title="Graphes P/Q/U/fréquence et consignes", xaxis_title="Temps", yaxis_title="Valeur")
+    if "event_type" in timeseries.columns:
+        events = timeseries[timeseries["event_type"].isin(["error", "timeout", "protocol_event", "gridcodes"])]
+        for ts in events["timestamp"].dropna().head(50):
+            fig.add_vline(x=ts, line_width=1, line_dash="dot", line_color="gray")
+
+    fig.update_layout(title="Graphes comparatifs (target vs meter vs dewesoft)", xaxis_title="Temps", yaxis_title="Valeur")
     return fig

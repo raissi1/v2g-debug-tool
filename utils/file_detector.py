@@ -56,7 +56,7 @@ def _is_dewesoft_csv(path: Path) -> bool:
     if path.suffix.lower() != ".csv":
         return False
     lower = str(path).lower()
-    return any(token in lower for token in ("dewesoft", "dewe", "acquisition", "measure", "measurement", "daq"))
+    return any(token in lower for token in ("dewesoft", "dewe", "acquisition", "measure", "measurement", "mesure", "daq"))
 
 
 def _is_dewesoft_binary(path: Path) -> bool:
@@ -65,7 +65,7 @@ def _is_dewesoft_binary(path: Path) -> bool:
 
 def _detect_full_test_structure(path: Path) -> str | None:
     lower_parts = {part.lower() for part in path.parts}
-    if "acquisitions" in lower_parts:
+    if any(name in lower_parts for name in ("acquisitions", "acquisition", "dewesoft", "measures", "mesures")):
         return "acquisitions"
     if "log" in lower_parts:
         return "log"

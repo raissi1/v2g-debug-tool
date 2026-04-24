@@ -134,6 +134,65 @@ def _build_reasoning_blocks(simplified: pd.DataFrame, issues: list[str]) -> dict
     return blocks
 
 
+def compare_sources(session_df: pd.DataFrame) -> dict:
+    if session_df.empty:
+        return {"rows": [], "insights": ["Données insuffisantes: timeline vide."]}
+
+    work = session_df.copy()
+    work["timestamp"] = pd.to_datetime(work["timestamp"], utc=True, errors="coerce")
+    work = work.dropna(subset=["timestamp"]).sort_values("timestamp")
+
+    def _src_group(payload: object) -> str:
+        if isinstance(payload, dict):
+            return str(payload.get("source_group", ""))
+        return ""
+
+    work["source_group"] = work.get("payload", pd.Series([None] * len(work))).apply(_src_group)
+    for col in ["Ptarget", "Qtarget", "P", "Q", "U", "frequency"]:
+        if col not in work.columns:
+            work[col] = pd.NA
+        work[col] = pd.to_numeric(work[col], errors="coerce")
+
+    meter = work[work["source_group"].str.contains("meter_dispatcher", case=False, na=False)][["timestamp", "P", "Q", "U", "frequency"]].rename(
+        columns={"P": "P_meter", "Q": "Q_meter", "U": "U_meter", "frequency": "frequency_meter"}
+    )
+    dew = work[work["source_group"].str.contains("measure", case=False, na=False)][["timestamp", "P", "Q", "U", "frequency"]].rename(
+        columns={"P": "P_dewesoft", "Q": "Q_dewesoft", "U": "U_dewesoft", "frequency": "frequency_dewesoft"}
+    )
+    target = work[work[["Ptarget", "Qtarget"]].notna().any(axis=1)][["timestamp", "Ptarget", "Qtarget"]]
+
+    base = work[["timestamp", "source", "event_type", "message"]].drop_duplicates(subset=["timestamp"]).sort_values("timestamp")
+    comp = pd.merge_asof(base, target.sort_values("timestamp"), on="timestamp", direction="nearest", tolerance=pd.Timedelta(seconds=5))
+    comp = pd.merge_asof(comp.sort_values("timestamp"), meter.sort_values("timestamp"), on="timestamp", direction="nearest", tolerance=pd.Timedelta(seconds=2))
+    comp = pd.merge_asof(comp.sort_values("timestamp"), dew.sort_values("timestamp"), on="timestamp", direction="nearest", tolerance=pd.Timedelta(seconds=2))
+
+    insights: list[str] = []
+    if comp["Ptarget"].notna().any() and comp["P_meter"].isna().all():
+        insights.append("Consigne présente mais mesure meter absente.")
+    if comp["Ptarget"].notna().any() and comp["P_meter"].notna().any():
+        mismatch = (comp["Ptarget"] - comp["P_meter"]).abs() > 0.3 * comp["Ptarget"].abs().clip(lower=1.0)
+        if mismatch.fillna(False).any():
+            insights.append("Consigne envoyée mais le véhicule/charge ne suit pas côté meter interne.")
+    if comp["P_meter"].notna().any() and comp["P_dewesoft"].notna().any():
+        delta = (comp["P_meter"] - comp["P_dewesoft"]).abs()
+        if (delta > 500).fillna(False).any():
+            insights.append("Écart significatif entre meter interne et Dewesoft sur P.")
+    if work["event_type"].eq("power_limit").any():
+        insights.append("Limitation borne détectée (EnergyManager/GridCodes).")
+    pcap_events = work[work["source_group"].str.contains("netlogger", case=False, na=False)]
+    if pcap_events.empty:
+        insights.append("PCAP absent ou non détecté: confiance communication réduite.")
+    elif pcap_events["message"].astype(str).str.contains("timeout|handshake|protocol|error", case=False, na=False).any():
+        insights.append("Événements communication suspects vus dans les traces PCAP/log netlogger.")
+    if comp["P_dewesoft"].isna().all():
+        insights.append("Dewesoft absent: diagnostic moins fiable côté comparaison externe.")
+    if not insights:
+        insights.append("Aucun écart majeur détecté sur la comparaison multi-sources.")
+
+    rows = comp.head(200).to_dict(orient="records")
+    return {"rows": rows, "insights": insights}
+
+
 def run_diagnostic(session_df: pd.DataFrame) -> dict:
     """Return probable cause, confidence, justification, evidence and missing data.
 
@@ -236,6 +295,7 @@ def run_diagnostic(session_df: pd.DataFrame) -> dict:
 
     result["issues"] = issues
     result["blocks"] = blocks
+    result["cross_analysis"] = compare_sources(session_df)
     result["conclusion"] = result["cause_probable"].capitalize()
     result["confidence"] = "Élevée" if result["confidence_score"] >= 75 else "Moyenne" if result["confidence_score"] >= 55 else "Faible"
     result["executive_summary"] = (

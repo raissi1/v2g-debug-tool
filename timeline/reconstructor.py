@@ -13,6 +13,17 @@ def build_timeseries_view(timeline: pd.DataFrame) -> pd.DataFrame:
     view["timestamp"] = pd.to_datetime(view["timestamp"], utc=True, errors="coerce")
     view = view.dropna(subset=["timestamp"]).sort_values("timestamp")
 
+    if "payload" in view.columns:
+        view["source_group"] = view["payload"].apply(lambda p: p.get("source_group") if isinstance(p, dict) else None)
+        view["P_meter"] = view.apply(lambda r: r.get("P") if str(r.get("source_group", "")).lower().find("meter_dispatcher") >= 0 else pd.NA, axis=1)
+        view["Q_meter"] = view.apply(lambda r: r.get("Q") if str(r.get("source_group", "")).lower().find("meter_dispatcher") >= 0 else pd.NA, axis=1)
+        view["U_meter"] = view.apply(lambda r: r.get("U") if str(r.get("source_group", "")).lower().find("meter_dispatcher") >= 0 else pd.NA, axis=1)
+        view["frequency_meter"] = view.apply(lambda r: r.get("frequency") if str(r.get("source_group", "")).lower().find("meter_dispatcher") >= 0 else pd.NA, axis=1)
+        view["P_dewesoft"] = view.apply(lambda r: r.get("P") if str(r.get("source_group", "")).lower().find("measure") >= 0 else pd.NA, axis=1)
+        view["Q_dewesoft"] = view.apply(lambda r: r.get("Q") if str(r.get("source_group", "")).lower().find("measure") >= 0 else pd.NA, axis=1)
+        view["U_dewesoft"] = view.apply(lambda r: r.get("U") if str(r.get("source_group", "")).lower().find("measure") >= 0 else pd.NA, axis=1)
+        view["frequency_dewesoft"] = view.apply(lambda r: r.get("frequency") if str(r.get("source_group", "")).lower().find("measure") >= 0 else pd.NA, axis=1)
+
     keep = [
         c
         for c in [
@@ -45,6 +56,14 @@ def build_timeseries_view(timeline: pd.DataFrame) -> pd.DataFrame:
             "state",
             "source",
             "event_type",
+            "P_meter",
+            "Q_meter",
+            "U_meter",
+            "frequency_meter",
+            "P_dewesoft",
+            "Q_dewesoft",
+            "U_dewesoft",
+            "frequency_dewesoft",
         ]
         if c in view.columns
     ]

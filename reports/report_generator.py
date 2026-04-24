@@ -54,6 +54,13 @@ def generate_html_report(
 
     evidence_html = _to_list_html(diagnostic.get("evidence", []))
     missing_html = _to_list_html(diagnostic.get("missing_data", []))
+    cross = diagnostic.get("cross_analysis", {})
+    cross_insights_html = _to_list_html(cross.get("insights", []))
+    cross_rows = pd.DataFrame(cross.get("rows", []))
+    cross_table_html = "<p>Aucune table comparative disponible.</p>"
+    if not cross_rows.empty:
+        keep = [c for c in ["timestamp", "Ptarget", "Qtarget", "P_meter", "Q_meter", "P_dewesoft", "Q_dewesoft", "U_meter", "U_dewesoft", "frequency_meter", "frequency_dewesoft", "event_type", "message"] if c in cross_rows.columns]
+        cross_table_html = cross_rows[keep].head(200).to_html(index=False, escape=True)
 
     return f"""
     <html>
@@ -73,6 +80,21 @@ def generate_html_report(
 
         <h2>Raisonnement du diagnostic</h2>
         {blocks_html}
+
+        <h2>Analyse croisée des sources</h2>
+        <h3>A. Ce que la borne demande/calcul</h3>
+        <ul>{_to_list_html(blocks.get("A_requested", []))}</ul>
+        <h3>B. Ce que le protocole envoie</h3>
+        <ul>{_to_list_html(blocks.get("C_sent_to_vehicle", []))}</ul>
+        <h3>C. Ce que le meter interne mesure</h3>
+        <ul>{_to_list_html(blocks.get("D_measured", []))}</ul>
+        <h3>D. Ce que Dewesoft mesure</h3>
+        <ul>{_to_list_html([line for line in blocks.get("D_measured", []) if "dewesoft" in line.lower()])}</ul>
+        <h3>E. Écarts détectés</h3>
+        <ul>{cross_insights_html}</ul>
+        <h3>F. Conclusion probable</h3>
+        <p><strong>{diagnostic.get('conclusion', 'Indéterminé')}</strong> (Confiance: {diagnostic.get('confidence', 'Faible')})</p>
+        {cross_table_html}
 
         <h2>Anomalies détectées</h2>
         <ul>{issues_html}</ul>
