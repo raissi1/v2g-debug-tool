@@ -69,6 +69,17 @@ def _detect_full_test_structure(path: Path) -> str | None:
     return None
 
 
+def _contains_path_sequence(path: Path, sequence: tuple[str, ...]) -> bool:
+    parts = [part.lower() for part in path.parts]
+    seq = list(sequence)
+    if len(parts) < len(seq):
+        return False
+    for idx in range(len(parts) - len(seq) + 1):
+        if parts[idx : idx + len(seq)] == seq:
+            return True
+    return False
+
+
 def detect_session_files(root: Path) -> DetectedFiles:
     """Detect relevant files for generic V2G debug workflow."""
     root = root.expanduser().resolve()
@@ -89,6 +100,18 @@ def detect_session_files(root: Path) -> DetectedFiles:
             continue
         if _is_dewesoft_csv(path):
             detected.dewesoft_csv.append(path)
+            continue
+
+        # Direct IoT.ON capture handling: detect /var/aux/netlogger regardless of which aux root was discovered.
+        if _contains_path_sequence(path, ("var", "aux", "netlogger")):
+            if _is_pcap_file(path.name):
+                detected.netlogger_pcaps.append(path)
+            elif path.name.lower() == "netlogger.log" or NETLOGGER_LOG_PATTERN.fullmatch(path.name.lower()):
+                detected.netlogger_logs.append(path)
+            elif _is_config_file(path):
+                detected.ignored_files.append(path)
+            else:
+                detected.ignored_files.append(path)
             continue
 
         # Mode 1: strict /var/aux package parsing
