@@ -20,9 +20,9 @@ _bootstrap_import_paths()
 
 import pandas as pd
 
+from analyzers.diagnostic_engine import run_diagnostic
 from analyzers.generic_debug import summarize_session
 from core.session_builder import build_session_timeline
-from diagnostics.generic_diagnostic import run_generic_diagnostic
 from graphs.plot_builder import build_signal_figure
 from reports.report_generator import generate_html_report
 from timeline.reconstructor import build_timeseries_view
@@ -149,7 +149,7 @@ def run_streamlit_app() -> None:
             session_df = build_session_timeline(detected)
             timeseries = build_timeseries_view(session_df)
             summary_lines = summarize_session(session_df)
-            diagnostic = run_generic_diagnostic(session_df)
+            diagnostic = run_diagnostic(session_df)
             detected_summary = detected.to_summary()
 
             st.session_state.analysis = {
@@ -207,7 +207,11 @@ def run_streamlit_app() -> None:
             )
             st.write(readable_summary)
             st.markdown("**Résumé exécutif**")
-            st.info(diagnostic.get("executive_summary", "Résumé non disponible."))
+            st.info(
+                f"Cause probable: {diagnostic.get('cause_probable', 'indéterminé')} | "
+                f"Confiance: {diagnostic.get('confidence_score', 0)}% | "
+                f"{diagnostic.get('justification', '')}"
+            )
 
     with tabs[1]:
         st.markdown("### Timeline filtrable")
@@ -264,16 +268,14 @@ def run_streamlit_app() -> None:
 
     with tabs[4]:
         st.markdown("### Conclusion diagnostic")
-        conclusion = diagnostic.get("conclusion", "Indéterminé")
-        confidence = diagnostic.get("confidence", "Faible")
-        issues = diagnostic.get("issues", [])
+        conclusion = diagnostic.get("cause_probable", "indéterminé")
+        confidence = diagnostic.get("confidence_score", 0)
 
         st.success(f"Origine probable : **{conclusion}**")
-        st.write(f"**Niveau de confiance :** {confidence}")
+        st.write(f"**Niveau de confiance :** {confidence}%")
 
-        st.markdown("**Justification**")
-        for issue in issues:
-            st.write(f"- {issue}")
+        st.markdown("**Explication claire**")
+        st.write(diagnostic.get("justification", "Aucune justification disponible."))
 
         st.markdown("**Preuves utilisées**")
         for ev in diagnostic.get("evidence", []):
