@@ -39,3 +39,28 @@ def test_requested_and_published_setpoints_are_filled_from_textual_logs() -> Non
     assert any("setpoint" in line.lower() or "maxpower_w" in line.lower() for line in requested)
     assert any("published" in line.lower() or "publication borne" in line.lower() for line in published)
 
+
+def test_vehicle_conclusion_is_downgraded_without_dewesoft() -> None:
+    frame = pd.DataFrame(
+        [
+            {
+                "timestamp": "2026-01-01T00:00:00Z",
+                "source": "EnergyManager.log",
+                "event_type": "setpoint",
+                "message": "setpoint",
+                "payload": {"source_group": "energy_manager"},
+                "Ptarget": 10000,
+            },
+            {
+                "timestamp": "2026-01-01T00:00:30Z",
+                "source": "meter.log",
+                "event_type": "measurement",
+                "message": "meter",
+                "payload": {"source_group": "meter_dispatcher"},
+                "P": 1000,
+            },
+        ]
+    )
+    result = run_diagnostic(frame)
+    assert result["cause_probable"] == "véhicule"
+    assert result["confidence_score"] <= 55

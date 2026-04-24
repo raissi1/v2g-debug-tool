@@ -13,6 +13,60 @@ def _to_list_html(values: list[str]) -> str:
     return "".join(f"<li>{v}</li>" for v in values)
 
 
+def _dewesoft_realtime_section(timeline: pd.DataFrame, detected_summary: dict | None) -> str:
+    if timeline.empty:
+        return "<p>Aucune donnée Dewesoft exploitable.</p>"
+
+    work = timeline.copy()
+    if "payload" not in work.columns:
+        return "<p>Aucune donnée Dewesoft exploitable.</p>"
+
+    src_group = work["payload"].apply(lambda p: p.get("source_group") if isinstance(p, dict) else None)
+    dew = work[src_group.astype(str).str.contains("measure", case=False, na=False)].copy()
+    if dew.empty:
+        return "<p>Aucune donnée Dewesoft exploitable.</p>"
+
+    dew["timestamp"] = pd.to_datetime(dew["timestamp"], utc=True, errors="coerce")
+    stats_lines: list[str] = []
+    for label, col in [
+        ("P", "P"),
+        ("Q", "Q"),
+        ("U", "U"),
+        ("fréquence", "frequency"),
+    ]:
+        series = pd.to_numeric(dew[col], errors="coerce") if col in dew.columns else pd.Series(dtype=float)
+        if series.dropna().empty:
+            stats_lines.append(f"{label}: non disponible")
+        else:
+            stats_lines.append(f"{label}: min={series.min():.3f}, max={series.max():.3f}, moyenne={series.mean():.3f}")
+
+    anomalies: list[str] = []
+    p = pd.to_numeric(dew["P"], errors="coerce") if "P" in dew.columns else pd.Series(dtype=float)
+    if not p.dropna().empty and (p.abs() < 0.1).mean() > 0.8:
+        anomalies.append("Puissance Dewesoft quasi nulle sur la majorité de la période.")
+
+    meter = work[src_group.astype(str).str.contains("meter_dispatcher", case=False, na=False)].copy()
+    compare_line = "Comparaison meter interne impossible (données manquantes)."
+    if not meter.empty and "P" in meter.columns and "P" in dew.columns:
+        meter_p = pd.to_numeric(meter["P"], errors="coerce").dropna()
+        dew_p = pd.to_numeric(dew["P"], errors="coerce").dropna()
+        if not meter_p.empty and not dew_p.empty:
+            compare_line = f"Comparaison P meter vs Dewesoft (moyennes): {meter_p.mean():.3f} vs {dew_p.mean():.3f}."
+
+    files_lines = []
+    if detected_summary:
+        files_lines.append(f"CSV détectés: {len(detected_summary.get('dewesoft_csv', []))}")
+        files_lines.append(f"Brut d7d/dxd: {len(detected_summary.get('dewesoft_raw', []))}")
+    period = "Période couverte: inconnue"
+    ts = dew["timestamp"].dropna()
+    if not ts.empty:
+        period = f"Période couverte: {ts.min().isoformat()} → {ts.max().isoformat()}"
+
+    return (
+        f"<ul>{_to_list_html(files_lines + [period] + stats_lines + [compare_line] + anomalies)}</ul>"
+    )
+
+
 def generate_html_report(
     summary_lines: list[str],
     diagnostic: dict,
@@ -61,6 +115,7 @@ def generate_html_report(
     if not cross_rows.empty:
         keep = [c for c in ["timestamp", "Ptarget", "Qtarget", "P_meter", "Q_meter", "P_dewesoft", "Q_dewesoft", "U_meter", "U_dewesoft", "frequency_meter", "frequency_dewesoft", "event_type", "message"] if c in cross_rows.columns]
         cross_table_html = cross_rows[keep].head(200).to_html(index=False, escape=True)
+    dewesoft_section_html = _dewesoft_realtime_section(timeline, detected_summary)
 
     return f"""
     <html>
@@ -95,6 +150,9 @@ def generate_html_report(
         <h3>F. Conclusion probable</h3>
         <p><strong>{diagnostic.get('conclusion', 'Indéterminé')}</strong> (Confiance: {diagnostic.get('confidence', 'Faible')})</p>
         {cross_table_html}
+
+        <h2>Analyse Dewesoft temps réel</h2>
+        {dewesoft_section_html}
 
         <h2>Anomalies détectées</h2>
         <ul>{issues_html}</ul>

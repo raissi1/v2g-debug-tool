@@ -8,6 +8,11 @@ from core.models import Event
 from parsers.dewesoft_csv import parse_dewesoft_csv
 
 
+def convert_dewesoft_to_csv(path: Path) -> Path | None:
+    """Placeholder converter hook for raw Dewesoft files (.d7d/.dxd)."""
+    return None
+
+
 def parse_dewesoft_file(path: Path) -> tuple[list[Event], str | None]:
     suffix = path.suffix.lower()
     if suffix == ".csv":
@@ -15,11 +20,12 @@ def parse_dewesoft_file(path: Path) -> tuple[list[Event], str | None]:
         return events, None
 
     if suffix in {".d7d", ".dxd"}:
+        _converted = convert_dewesoft_to_csv(path)
         event = Event(
             timestamp=None,
             source=path.name,
             event_type="warning",
-            message=f"conversion Dewesoft requise pour {path.suffix}",
+            message=f"Dewesoft brut détecté, conversion requise ({path.suffix})",
             payload={
                 "path": str(path),
                 "parser": "dewesoft",
@@ -27,6 +33,6 @@ def parse_dewesoft_file(path: Path) -> tuple[list[Event], str | None]:
                 "conversion_required": True,
             },
         )
-        return [event], "conversion Dewesoft requise"
+        return [event], "Dewesoft brut détecté, conversion requise"
 
     return [], None

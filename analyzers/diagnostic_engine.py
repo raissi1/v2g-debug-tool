@@ -288,6 +288,16 @@ def run_diagnostic(session_df: pd.DataFrame) -> dict:
         result["evidence"].append(f"Données manquantes: {', '.join(missing)}")
         issues.append(f"Données manquantes: {', '.join(missing)}")
 
+    dew_available = False
+    if "payload" in simplified.columns:
+        dew_available = simplified["payload"].apply(
+            lambda p: isinstance(p, dict) and str(p.get("source_group", "")).lower().find("measure") >= 0
+        ).any()
+    if result["cause_probable"] == "véhicule" and not dew_available:
+        result["confidence_score"] = min(result["confidence_score"], 55)
+        result["justification"] += " Dewesoft non exploité: confiance abaissée pour une conclusion côté véhicule."
+        result["evidence"].append("Absence Dewesoft exploité: ne pas conclure fortement côté véhicule.")
+
     if not issues:
         issues.append("Aucune anomalie majeure détectée par les règles actuelles.")
 
