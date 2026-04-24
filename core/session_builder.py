@@ -15,7 +15,7 @@ from core.models import DetectedFiles, Event
 from parsers.charger_app import parse_charger_app
 from parsers.energy_manager import parse_energy_manager
 from parsers.meter_dispatcher import parse_meter_dispatcher
-from parsers.dewesoft_csv import parse_dewesoft_csv
+from parsers.dewesoft import parse_dewesoft_file
 
 ISO_TS_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?")
 NUMBER = r"([-+]?\d+(?:[\.,]\d+)?)"
@@ -168,14 +168,11 @@ def _events_from_log(path: Path, source_group: str = "generic") -> Iterable[Even
 
 
 def _events_from_measure(path: Path) -> Iterable[Event]:
-    # First stage for Dewesoft measurements: CSV support.
-    if path.suffix.lower() == ".csv":
-        events, _ = parse_dewesoft_csv(path)
-        for event in events:
-            yield event
-        return
+    events, _warning = parse_dewesoft_file(path)
+    for event in events:
+        yield event
 
-    # Fallback for non-Dewesoft files kept for extensibility.
+    # Fallback for non-dewesoft files kept for extensibility.
     suffix = path.suffix.lower()
     if suffix in {".tsv", ".json"}:
         try:

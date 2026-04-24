@@ -65,7 +65,7 @@ def _compute_overview_metrics(session_df: pd.DataFrame, detected_summary: dict) 
             "gridcodes": 0,
             "setpoints": 0,
             "pcaps": len(detected_summary.get("netlogger_pcaps", [])),
-            "measures": len(detected_summary.get("dewesoft_csv", [])),
+            "measures": len(detected_summary.get("dewesoft_csv", [])) + len(detected_summary.get("dewesoft_raw", [])),
         }
 
     event_counts = session_df["event_type"].value_counts()
@@ -76,6 +76,9 @@ def _compute_overview_metrics(session_df: pd.DataFrame, detected_summary: dict) 
         + len(detected_summary.get("netlogger_pcaps", []))
         + len(detected_summary.get("netlogger_logs", []))
         + len(detected_summary.get("dewesoft_csv", []))
+        + len(detected_summary.get("dewesoft_raw", []))
+        + len(detected_summary.get("generic_logs", []))
+        + len(detected_summary.get("generic_pcaps", []))
     )
     return {
         "files_analyzed": files_count,
@@ -85,7 +88,7 @@ def _compute_overview_metrics(session_df: pd.DataFrame, detected_summary: dict) 
         "gridcodes": int(event_counts.get("gridcodes", 0)),
         "setpoints": int(event_counts.get("setpoint", 0)),
         "pcaps": len(detected_summary.get("netlogger_pcaps", [])),
-        "measures": len(detected_summary.get("dewesoft_csv", [])),
+        "measures": len(detected_summary.get("dewesoft_csv", [])) + len(detected_summary.get("dewesoft_raw", [])),
     }
 
 
@@ -127,7 +130,8 @@ def run_streamlit_app() -> None:
             st.write(f"- ChargerApp: **{len(dsum.get('charger_app', []))}**")
             st.write(f"- iotc-meter-dispatcher: **{len(dsum.get('iotc_meter_dispatcher', []))}**")
             st.write(f"- netlogger PCAP: **{len(dsum.get('netlogger_pcaps', []))}**")
-            st.write(f"- mesures: **{len(dsum.get('dewesoft_csv', []))}**")
+            st.write(f"- mesures CSV: **{len(dsum.get('dewesoft_csv', []))}**")
+            st.write(f"- mesures d7d/dxd: **{len(dsum.get('dewesoft_raw', []))}** (conversion requise)")
 
             with st.expander("Voir les fichiers détectés"):
                 st.json(
@@ -138,6 +142,9 @@ def run_streamlit_app() -> None:
                         "netlogger_pcaps": dsum.get("netlogger_pcaps", []),
                         "netlogger_logs": dsum.get("netlogger_logs", []),
                         "dewesoft_csv": dsum.get("dewesoft_csv", []),
+                        "dewesoft_raw": dsum.get("dewesoft_raw", []),
+                        "generic_logs": dsum.get("generic_logs", []),
+                        "generic_pcaps": dsum.get("generic_pcaps", []),
                     }
                 )
 
@@ -284,6 +291,16 @@ def run_streamlit_app() -> None:
         st.markdown("**Données manquantes**")
         missing_data = diagnostic.get("missing_data", [])
         st.write(", ".join(missing_data) if missing_data else "Aucune donnée critique manquante détectée.")
+
+        csv_count = len(detected_summary.get("dewesoft_csv", []))
+        raw_count = len(detected_summary.get("dewesoft_raw", []))
+        st.markdown("**Données Dewesoft**")
+        if csv_count > 0:
+            st.write(f"Mesures CSV disponibles: {csv_count}")
+        elif raw_count > 0:
+            st.warning(f"{raw_count} fichier(s) Dewesoft .d7d/.dxd détecté(s): conversion Dewesoft requise.")
+        else:
+            st.info("Aucune acquisition Dewesoft détectée.")
 
     with tabs[5]:
         st.markdown("### Export rapport")

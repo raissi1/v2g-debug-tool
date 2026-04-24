@@ -1,4 +1,4 @@
-"""Strict session file detection scoped to /var/aux package contents."""
+"""Session file detection for IoT.ON /var/aux and full test folders."""
 
 from __future__ import annotations
 
@@ -37,21 +37,31 @@ def _is_log_file(name: str) -> bool:
     return lower.endswith(".log") or LOG_PATTERN.fullmatch(lower) is not None
 
 
-def _is_netlogger_pcap(name: str) -> bool:
+def _is_pcap_file(name: str) -> bool:
     lower = name.lower()
     return lower.endswith(".pcap") or lower.endswith(".pcap.gz")
-
-
-def _is_netlogger_log(name: str) -> bool:
-    lower = name.lower()
-    return lower == "netlogger.log" or NETLOGGER_LOG_PATTERN.fullmatch(lower) is not None
 
 
 def _is_dewesoft_csv(path: Path) -> bool:
     if path.suffix.lower() != ".csv":
         return False
     lower = str(path).lower()
-    return any(token in lower for token in ("dewesoft", "dewe", "measure", "measurement", "daq"))
+    return any(token in lower for token in ("dewesoft", "dewe", "acquisition", "measure", "measurement", "daq"))
+
+
+def _is_dewesoft_binary(path: Path) -> bool:
+    return path.suffix.lower() in {".d7d", ".dxd"}
+
+
+def _detect_full_test_structure(path: Path) -> str | None:
+    lower_parts = {part.lower() for part in path.parts}
+    if "acquisitions" in lower_parts:
+        return "acquisitions"
+    if "log" in lower_parts:
+        return "log"
+    if "pcap" in lower_parts:
+        return "pcap"
+    return None
 
 
 def detect_session_files(root: Path) -> DetectedFiles:
@@ -62,76 +72,90 @@ def detect_session_files(root: Path) -> DetectedFiles:
 
     detected = DetectedFiles(root=root)
     aux_root = _find_aux_root(root)
-
-    if aux_root is None:
-        for path in root.rglob("*"):
-            if path.is_file():
-                if _is_dewesoft_csv(path):
-                    detected.dewesoft_csv.append(path)
-                else:
-                    detected.ignored_files.append(path)
-        detected.dewesoft_csv.sort()
-        detected.ignored_files.sort()
-        return detected
-
     detected.aux_root = aux_root
 
     for path in root.rglob("*"):
         if not path.is_file():
             continue
 
-        # Dewesoft CSV can be outside /var/aux.
+        # Dewesoft acquisitions are accepted globally.
+        if _is_dewesoft_binary(path):
+            detected.dewesoft_raw.append(path)
+            continue
         if _is_dewesoft_csv(path):
             detected.dewesoft_csv.append(path)
             continue
 
-        try:
-            path.relative_to(aux_root)
-        except ValueError:
-            detected.ignored_files.append(path)
+        # Mode 1: strict /var/aux package parsing
+        if aux_root is not None:
+            try:
+                rel = path.relative_to(aux_root)
+                if not rel.parts:
+                    detected.ignored_files.append(path)
+                    continue
 
-    for path in aux_root.rglob("*"):
-        if not path.is_file():
-            continue
+                top = rel.parts[0]
+                if top not in ALLOWED_AUX_DIRS:
+                    detected.ignored_files.append(path)
+                    continue
+                if _is_config_file(path):
+                    detected.ignored_files.append(path)
+                    continue
 
-        relative_parts = path.relative_to(aux_root).parts
-        if not relative_parts:
-            detected.ignored_files.append(path)
-            continue
+                if top == "ChargerApp":
+                    if _is_log_file(path.name):
+                        detected.charger_app.append(path)
+                    else:
+                        detected.ignored_files.append(path)
+                elif top == "EnergyManager":
+                    if _is_log_file(path.name):
+                        detected.energy_manager.append(path)
+                    else:
+                        detected.ignored_files.append(path)
+                elif top == "iotc-meter-dispatcher":
+                    if _is_log_file(path.name):
+                        detected.iotc_meter_dispatcher.append(path)
+                    else:
+                        detected.ignored_files.append(path)
+                elif top == "netlogger":
+                    if _is_pcap_file(path.name):
+                        detected.netlogger_pcaps.append(path)
+                    elif path.name.lower() == "netlogger.log" or NETLOGGER_LOG_PATTERN.fullmatch(path.name.lower()):
+                        detected.netlogger_logs.append(path)
+                    else:
+                        detected.ignored_files.append(path)
+                continue
+            except ValueError:
+                # not in /var/aux, try full-folder mode below
+                pass
 
-        top_level = relative_parts[0]
-        filename = path.name
-
-        if top_level not in ALLOWED_AUX_DIRS:
-            detected.ignored_files.append(path)
-            continue
-
-        if _is_config_file(path):
-            detected.ignored_files.append(path)
-            continue
-
-        if top_level == "ChargerApp":
-            if _is_log_file(filename):
-                detected.charger_app.append(path)
+        # Mode 2: full test folder (Acquisitions/Log/pcap)
+        folder_type = _detect_full_test_structure(path)
+        if folder_type == "log":
+            if _is_config_file(path):
+                detected.ignored_files.append(path)
+            elif _is_log_file(path.name):
+                low = path.name.lower()
+                if "charg" in low:
+                    detected.charger_app.append(path)
+                elif "energy" in low:
+                    detected.energy_manager.append(path)
+                elif "meter" in low or "dispatch" in low:
+                    detected.iotc_meter_dispatcher.append(path)
+                else:
+                    detected.generic_logs.append(path)
             else:
                 detected.ignored_files.append(path)
-        elif top_level == "EnergyManager":
-            if _is_log_file(filename):
-                detected.energy_manager.append(path)
+        elif folder_type == "pcap":
+            if _is_pcap_file(path.name):
+                detected.generic_pcaps.append(path)
             else:
                 detected.ignored_files.append(path)
-        elif top_level == "iotc-meter-dispatcher":
-            if _is_log_file(filename):
-                detected.iotc_meter_dispatcher.append(path)
-            else:
-                detected.ignored_files.append(path)
-        elif top_level == "netlogger":
-            if _is_netlogger_pcap(filename):
-                detected.netlogger_pcaps.append(path)
-            elif _is_netlogger_log(filename):
-                detected.netlogger_logs.append(path)
-            else:
-                detected.ignored_files.append(path)
+        elif folder_type == "acquisitions":
+            # non-csv/non-d7d/non-dxd in Acquisitions are ignored for now.
+            detected.ignored_files.append(path)
+        else:
+            detected.ignored_files.append(path)
 
     for attr in (
         "charger_app",
@@ -139,7 +163,10 @@ def detect_session_files(root: Path) -> DetectedFiles:
         "iotc_meter_dispatcher",
         "netlogger_pcaps",
         "netlogger_logs",
+        "generic_logs",
+        "generic_pcaps",
         "dewesoft_csv",
+        "dewesoft_raw",
         "ignored_files",
     ):
         getattr(detected, attr).sort()
