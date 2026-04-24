@@ -24,7 +24,7 @@ from analyzers.diagnostic_engine import run_diagnostic
 from analyzers.generic_debug import summarize_session
 from core.session_builder import build_session_timeline
 from graphs.plot_builder import build_signal_figure
-from reports.report_generator import generate_html_report
+from reports.html_report import generate_html_report
 from timeline.reconstructor import build_timeseries_view
 from utils.file_detector import detect_session_files
 from utils.zip_loader import extract_zip_to_temp

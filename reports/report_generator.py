@@ -116,6 +116,11 @@ def generate_html_report(
         keep = [c for c in ["timestamp", "Ptarget", "Qtarget", "P_meter", "Q_meter", "P_dewesoft", "Q_dewesoft", "U_meter", "U_dewesoft", "frequency_meter", "frequency_dewesoft", "event_type", "message"] if c in cross_rows.columns]
         cross_table_html = cross_rows[keep].head(200).to_html(index=False, escape=True)
     dewesoft_section_html = _dewesoft_realtime_section(timeline, detected_summary)
+    evidence_rows = pd.DataFrame(diagnostic.get("evidence_table", []))
+    evidence_table_html = "<p>Aucune preuve structurée.</p>"
+    if not evidence_rows.empty:
+        keep = [c for c in ["timestamp", "source", "type", "extracted_value", "impact", "weight", "comment"] if c in evidence_rows.columns]
+        evidence_table_html = evidence_rows[keep].to_html(index=False, escape=True)
 
     return f"""
     <html>
@@ -153,6 +158,9 @@ def generate_html_report(
 
         <h2>Analyse Dewesoft temps réel</h2>
         {dewesoft_section_html}
+
+        <h2>Preuves du diagnostic</h2>
+        {evidence_table_html}
 
         <h2>Anomalies détectées</h2>
         <ul>{issues_html}</ul>

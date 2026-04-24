@@ -5,6 +5,8 @@ from __future__ import annotations
 import pandas as pd
 import re
 
+from analyzers.source_comparison import compare_sources as compare_sources_weighted
+
 
 def _build_simplified_timeline(session_df: pd.DataFrame) -> pd.DataFrame:
     """Reconstruct a compact timeline for diagnostic reasoning."""
@@ -135,62 +137,7 @@ def _build_reasoning_blocks(simplified: pd.DataFrame, issues: list[str]) -> dict
 
 
 def compare_sources(session_df: pd.DataFrame) -> dict:
-    if session_df.empty:
-        return {"rows": [], "insights": ["Données insuffisantes: timeline vide."]}
-
-    work = session_df.copy()
-    work["timestamp"] = pd.to_datetime(work["timestamp"], utc=True, errors="coerce")
-    work = work.dropna(subset=["timestamp"]).sort_values("timestamp")
-
-    def _src_group(payload: object) -> str:
-        if isinstance(payload, dict):
-            return str(payload.get("source_group", ""))
-        return ""
-
-    work["source_group"] = work.get("payload", pd.Series([None] * len(work))).apply(_src_group)
-    for col in ["Ptarget", "Qtarget", "P", "Q", "U", "frequency"]:
-        if col not in work.columns:
-            work[col] = pd.NA
-        work[col] = pd.to_numeric(work[col], errors="coerce")
-
-    meter = work[work["source_group"].str.contains("meter_dispatcher", case=False, na=False)][["timestamp", "P", "Q", "U", "frequency"]].rename(
-        columns={"P": "P_meter", "Q": "Q_meter", "U": "U_meter", "frequency": "frequency_meter"}
-    )
-    dew = work[work["source_group"].str.contains("measure", case=False, na=False)][["timestamp", "P", "Q", "U", "frequency"]].rename(
-        columns={"P": "P_dewesoft", "Q": "Q_dewesoft", "U": "U_dewesoft", "frequency": "frequency_dewesoft"}
-    )
-    target = work[work[["Ptarget", "Qtarget"]].notna().any(axis=1)][["timestamp", "Ptarget", "Qtarget"]]
-
-    base = work[["timestamp", "source", "event_type", "message"]].drop_duplicates(subset=["timestamp"]).sort_values("timestamp")
-    comp = pd.merge_asof(base, target.sort_values("timestamp"), on="timestamp", direction="nearest", tolerance=pd.Timedelta(seconds=5))
-    comp = pd.merge_asof(comp.sort_values("timestamp"), meter.sort_values("timestamp"), on="timestamp", direction="nearest", tolerance=pd.Timedelta(seconds=2))
-    comp = pd.merge_asof(comp.sort_values("timestamp"), dew.sort_values("timestamp"), on="timestamp", direction="nearest", tolerance=pd.Timedelta(seconds=2))
-
-    insights: list[str] = []
-    if comp["Ptarget"].notna().any() and comp["P_meter"].isna().all():
-        insights.append("Consigne présente mais mesure meter absente.")
-    if comp["Ptarget"].notna().any() and comp["P_meter"].notna().any():
-        mismatch = (comp["Ptarget"] - comp["P_meter"]).abs() > 0.3 * comp["Ptarget"].abs().clip(lower=1.0)
-        if mismatch.fillna(False).any():
-            insights.append("Consigne envoyée mais le véhicule/charge ne suit pas côté meter interne.")
-    if comp["P_meter"].notna().any() and comp["P_dewesoft"].notna().any():
-        delta = (comp["P_meter"] - comp["P_dewesoft"]).abs()
-        if (delta > 500).fillna(False).any():
-            insights.append("Écart significatif entre meter interne et Dewesoft sur P.")
-    if work["event_type"].eq("power_limit").any():
-        insights.append("Limitation borne détectée (EnergyManager/GridCodes).")
-    pcap_events = work[work["source_group"].str.contains("netlogger", case=False, na=False)]
-    if pcap_events.empty:
-        insights.append("PCAP absent ou non détecté: confiance communication réduite.")
-    elif pcap_events["message"].astype(str).str.contains("timeout|handshake|protocol|error", case=False, na=False).any():
-        insights.append("Événements communication suspects vus dans les traces PCAP/log netlogger.")
-    if comp["P_dewesoft"].isna().all():
-        insights.append("Dewesoft absent: diagnostic moins fiable côté comparaison externe.")
-    if not insights:
-        insights.append("Aucun écart majeur détecté sur la comparaison multi-sources.")
-
-    rows = comp.head(200).to_dict(orient="records")
-    return {"rows": rows, "insights": insights}
+    return compare_sources_weighted(session_df)
 
 
 def run_diagnostic(session_df: pd.DataFrame) -> dict:
@@ -226,6 +173,10 @@ def run_diagnostic(session_df: pd.DataFrame) -> dict:
         if col not in simplified.columns or simplified[col].dropna().empty:
             missing.append(col)
     result["missing_data"] = missing
+
+    cross = compare_sources(session_df)
+    scores = cross.get("scores", {})
+    evidence_table = cross.get("evidence_table", [])
 
     issues: list[str] = []
 
@@ -266,33 +217,39 @@ def run_diagnostic(session_df: pd.DataFrame) -> dict:
         result["evidence"].append("Timeouts ou erreurs protocole/handshake observés.")
         issues.append("Timeout/erreur protocolaire observé.")
 
-    # Decision priority by explicit rule strength.
-    if vehicle_signal:
-        result["cause_probable"] = "véhicule"
-        result["confidence_score"] = 75 if not missing else 65
-        result["justification"] = "La consigne a été envoyée mais la puissance mesurée ne suit pas suffisamment."
-    elif station_signal:
-        result["cause_probable"] = "borne"
-        result["confidence_score"] = 72 if not missing else 60
-        result["justification"] = "Des limitations internes/GridCodes/crash-restart indiquent un comportement côté borne/configuration."
-    elif comm_signal:
-        result["cause_probable"] = "communication"
-        result["confidence_score"] = 70 if not missing else 55
-        result["justification"] = "Des signaux de timeout/protocole suggèrent un problème de communication."
-    else:
-        result["cause_probable"] = "indéterminé"
-        result["confidence_score"] = 30 if missing else 45
-        result["justification"] = "Aucune signature forte détectée avec les règles génériques actuelles."
-
-    if missing:
-        result["evidence"].append(f"Données manquantes: {', '.join(missing)}")
-        issues.append(f"Données manquantes: {', '.join(missing)}")
-
     dew_available = False
     if "payload" in simplified.columns:
         dew_available = simplified["payload"].apply(
             lambda p: isinstance(p, dict) and str(p.get("source_group", "")).lower().find("measure") >= 0
         ).any()
+
+    # Decision from weighted evidence + guard rails.
+    best_cause = max(scores, key=scores.get) if scores else "indéterminé"
+    best_score = scores.get(best_cause, 0.0)
+    second = sorted(scores.values(), reverse=True)[1] if len(scores) > 1 else 0.0
+
+    if ("Ptarget" in missing) and (not dew_available):
+        result["cause_probable"] = "indéterminé"
+        result["confidence_score"] = 30
+        result["justification"] = "Consigne Ptarget non disponible et mesure Dewesoft absente."
+    elif best_score < 1.5 or abs(best_score - second) < 0.8:
+        result["cause_probable"] = "indéterminé"
+        result["confidence_score"] = 35 if not missing else 30
+        result["justification"] = "Preuves insuffisantes ou contradictoires pour conclure."
+    else:
+        result["cause_probable"] = best_cause
+        result["confidence_score"] = min(85, int(45 + best_score * 12))
+        if best_cause == "véhicule":
+            result["justification"] = "Consigne disponible mais mesure ne suit pas, sans preuve borne bloquante dominante."
+        elif best_cause == "borne":
+            result["justification"] = "Preuves explicites de recalcul/limitation/crash côté borne."
+        else:
+            result["justification"] = "Preuves protocolaires/timeout dominantes côté communication."
+
+    if missing:
+        result["evidence"].append(f"Données manquantes: {', '.join(missing)}")
+        issues.append(f"Données manquantes: {', '.join(missing)}")
+
     if result["cause_probable"] == "véhicule" and not dew_available:
         result["confidence_score"] = min(result["confidence_score"], 55)
         result["justification"] += " Dewesoft non exploité: confiance abaissée pour une conclusion côté véhicule."
@@ -305,12 +262,23 @@ def run_diagnostic(session_df: pd.DataFrame) -> dict:
 
     result["issues"] = issues
     result["blocks"] = blocks
-    result["cross_analysis"] = compare_sources(session_df)
+    result["cross_analysis"] = cross
+    result["evidence_table"] = evidence_table
     result["conclusion"] = result["cause_probable"].capitalize()
     result["confidence"] = "Élevée" if result["confidence_score"] >= 75 else "Moyenne" if result["confidence_score"] >= 55 else "Faible"
+    observation = "Tension et fréquence nominales, puissance active faible/nulle." if "P" not in missing and "U" not in missing else "Observations physiques partielles."
+    recommendation = (
+        "Extraire Ptarget depuis EnergyManager/PCAP et importer Dewesoft pour renforcer le diagnostic."
+        if ("Ptarget" in missing or not dew_available)
+        else "Comparer finement consignes/protocole avec mesures Dewesoft et meter."
+    )
     result["executive_summary"] = (
-        f"Cause probable: {result['cause_probable']} (confiance {result['confidence_score']}%). "
-        f"Anomalies: {len(issues)}. Données manquantes: {', '.join(missing) if missing else 'aucune'}."
+        f"Cause probable: {result['cause_probable']}. "
+        f"Confiance: {result['confidence']} ({result['confidence_score']}%). "
+        f"Observation: {observation} "
+        f"Preuves: {', '.join(cross.get('insights', [])[:3]) if cross.get('insights') else 'aucune forte'} "
+        f"Données manquantes: {', '.join(missing) if missing else 'aucune'}. "
+        f"Recommandation: {recommendation}"
     )
 
     return result

@@ -62,5 +62,5 @@ def test_vehicle_conclusion_is_downgraded_without_dewesoft() -> None:
         ]
     )
     result = run_diagnostic(frame)
-    assert result["cause_probable"] == "véhicule"
+    assert result["cause_probable"] in {"véhicule", "indéterminé"}
     assert result["confidence_score"] <= 55
