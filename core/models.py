@@ -20,6 +20,7 @@ class DetectedFiles:
     iotc_meter_dispatcher: list[Path] = field(default_factory=list)
     netlogger_pcaps: list[Path] = field(default_factory=list)
     netlogger_logs: list[Path] = field(default_factory=list)
+    dewesoft_csv: list[Path] = field(default_factory=list)
 
     ignored_files: list[Path] = field(default_factory=list)
 
@@ -36,13 +37,11 @@ class DetectedFiles:
 
     @property
     def pcaps(self) -> list[Path]:
-        """Backward-compatible alias used by session builder."""
         return self.netlogger_pcaps
 
     @property
     def measures(self) -> list[Path]:
-        """No measure files are retained by the strict /var/aux policy."""
-        return []
+        return self.dewesoft_csv
 
     def to_summary(self) -> dict[str, Any]:
         return {
@@ -53,6 +52,7 @@ class DetectedFiles:
             "iotc_meter_dispatcher": [str(p) for p in self.iotc_meter_dispatcher],
             "netlogger_pcaps": [str(p) for p in self.netlogger_pcaps],
             "netlogger_logs": [str(p) for p in self.netlogger_logs],
+            "dewesoft_csv": [str(p) for p in self.dewesoft_csv],
             "ignored_files": [str(p) for p in self.ignored_files],
         }
 

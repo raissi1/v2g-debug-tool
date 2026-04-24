@@ -1,11 +1,4 @@
-"""Streamlit entrypoint for the V2G debug tool.
-
-Usage:
-    streamlit run app/main.py
-
-If Streamlit is missing, this module prints a clear installation hint when
-executed directly with `python app/main.py`.
-"""
+"""Streamlit entrypoint for the V2G generic debug tool."""
 
 from __future__ import annotations
 
@@ -16,24 +9,10 @@ from typing import Any
 
 
 def _bootstrap_import_paths() -> None:
-    """Ensure repository-local packages are importable in all execution modes.
-
-    This handles cases like:
-      - `streamlit run app/main.py`
-      - `python app/main.py`
-      - launching from another current working directory
-    """
     script_path = Path(__file__).resolve()
-    candidates = [
-        script_path.parents[1],  # repo root when script is app/main.py
-        Path.cwd().resolve(),    # current working directory
-        script_path.parent,      # app/
-    ]
-
+    candidates = [script_path.parents[1], Path.cwd().resolve(), script_path.parent]
     for candidate in candidates:
-        if not candidate.exists():
-            continue
-        if (candidate / "analyzers").exists() and str(candidate) not in sys.path:
+        if candidate.exists() and (candidate / "analyzers").exists() and str(candidate) not in sys.path:
             sys.path.insert(0, str(candidate))
 
 
@@ -43,6 +22,10 @@ import pandas as pd
 
 from analyzers.generic_debug import summarize_session
 from core.session_builder import build_session_timeline
+from diagnostics.generic_diagnostic import run_generic_diagnostic
+from graphs.plot_builder import build_signal_figure
+from reports.report_generator import generate_html_report
+from timeline.reconstructor import build_timeseries_view
 from utils.file_detector import detect_session_files
 from utils.zip_loader import extract_zip_to_temp
 
@@ -52,7 +35,6 @@ def _resolve_input_source(
     folder_path: str,
     uploaded_zip: Any,
 ) -> tuple[Path, tempfile.TemporaryDirectory[str] | None]:
-    """Return the session directory to analyze and optional temp directory."""
     if input_mode == "Dossier local":
         if not folder_path:
             raise ValueError("Veuillez indiquer un chemin local vers un dossier de session.")
@@ -74,7 +56,6 @@ def _resolve_input_source(
 
 
 def run_streamlit_app() -> None:
-    """Run the Streamlit UI."""
     try:
         import streamlit as st
     except ModuleNotFoundError as exc:
@@ -84,23 +65,16 @@ def run_streamlit_app() -> None:
         ) from exc
 
     st.set_page_config(page_title="V2G Debug Tool", layout="wide")
-    st.title("V2G Session Debugger")
-    st.caption("Analyse d'une session à partir d'un dossier local ou d'un fichier ZIP.")
+    st.title("V2G Session Debugger - complet")
+    st.caption("Pipeline modulaire: ingestion, parsing, timeline, graphes, diagnostic et rapport.")
 
     with st.sidebar:
         st.header("Entrée")
         input_mode = st.radio("Type de source", ["Fichier ZIP", "Dossier local"], index=0)
-
         folder_path = ""
         uploaded_zip = None
-
         if input_mode == "Dossier local":
-            folder_path = st.text_input(
-                "Chemin du dossier",
-                value="",
-                placeholder="/path/to/session",
-                help="Chemin sur la machine qui exécute Streamlit.",
-            )
+            folder_path = st.text_input("Chemin du dossier", value="", placeholder="/path/to/session")
         else:
             uploaded_zip = st.file_uploader("Session ZIP", type=["zip"])
 
@@ -108,48 +82,58 @@ def run_streamlit_app() -> None:
         temp_dir: tempfile.TemporaryDirectory[str] | None = None
         try:
             session_dir, temp_dir = _resolve_input_source(input_mode, folder_path, uploaded_zip)
-
             detected = detect_session_files(session_dir)
             session_df = build_session_timeline(detected)
+            timeseries = build_timeseries_view(session_df)
+            summary_lines = summarize_session(session_df)
+            diagnostic = run_generic_diagnostic(session_df)
 
-            st.subheader("Fichiers de session pertinents (/var/aux)")
+            st.subheader("Résumé des fichiers détectés")
             summary = detected.to_summary()
-            relevant_summary = {
-                "root": summary.get("root"),
-                "aux_root": summary.get("aux_root"),
-                "charger_app": summary.get("charger_app", []),
-                "energy_manager": summary.get("energy_manager", []),
-                "iotc_meter_dispatcher": summary.get("iotc_meter_dispatcher", []),
-                "netlogger_pcaps": summary.get("netlogger_pcaps", []),
-                "netlogger_logs": summary.get("netlogger_logs", []),
-            }
-            st.json(relevant_summary)
-            st.caption(f"Fichiers ignorés par la politique de détection: {len(summary.get('ignored_files', []))}")
-
-            st.subheader("Analyse")
-            for line in summarize_session(session_df):
-                st.write(f"- {line}")
+            st.json(
+                {
+                    "root": summary.get("root"),
+                    "aux_root": summary.get("aux_root"),
+                    "charger_app": summary.get("charger_app", []),
+                    "energy_manager": summary.get("energy_manager", []),
+                    "iotc_meter_dispatcher": summary.get("iotc_meter_dispatcher", []),
+                    "netlogger_pcaps": summary.get("netlogger_pcaps", []),
+                    "netlogger_logs": summary.get("netlogger_logs", []),
+                    "dewesoft_csv": summary.get("dewesoft_csv", []),
+                }
+            )
+            st.caption(f"Fichiers ignorés: {len(summary.get('ignored_files', []))}")
 
             st.subheader("Timeline")
-            if session_df.empty:
-                st.info("Aucun événement parsé.")
-            else:
-                st.dataframe(session_df, use_container_width=True)
+            st.dataframe(session_df, use_container_width=True)
 
-                st.download_button(
-                    "Télécharger la timeline (CSV)",
-                    data=session_df.to_csv(index=False).encode("utf-8"),
-                    file_name="v2g_session_timeline.csv",
-                    mime="text/csv",
-                )
+            st.subheader("Graphes P/Q/U/fréquence")
+            st.plotly_chart(build_signal_figure(timeseries), use_container_width=True)
 
-                with st.expander("Statistiques rapides"):
-                    counts = session_df["source"].value_counts().rename_axis("source").reset_index(name="count")
-                    st.dataframe(counts, use_container_width=True)
+            st.subheader("Analyse debug")
+            for line in summary_lines:
+                st.write(f"- {line}")
+            st.markdown("**Conclusion générique**")
+            st.write(diagnostic.get("conclusion", "Indéterminé"))
+            st.markdown("**Anomalies**")
+            for issue in diagnostic.get("issues", []):
+                st.write(f"- {issue}")
 
-                    ts = pd.to_datetime(session_df.get("timestamp"), utc=True, errors="coerce").dropna()
-                    if not ts.empty:
-                        st.metric("Durée couverte", str(ts.max() - ts.min()))
+            st.subheader("Export rapport")
+            report_html = generate_html_report(summary_lines, diagnostic, session_df)
+            st.download_button(
+                "Télécharger rapport HTML",
+                data=report_html.encode("utf-8"),
+                file_name="v2g_debug_report.html",
+                mime="text/html",
+            )
+
+            st.download_button(
+                "Télécharger timeline (CSV)",
+                data=session_df.to_csv(index=False).encode("utf-8"),
+                file_name="v2g_session_timeline.csv",
+                mime="text/csv",
+            )
 
         except Exception as exc:  # noqa: BLE001
             st.error(str(exc))
@@ -159,11 +143,10 @@ def run_streamlit_app() -> None:
                 temp_dir.cleanup()
 
     st.markdown("---")
-    st.caption("Détection stricte: uniquement /var/aux/{ChargerApp, EnergyManager, iotc-meter-dispatcher, netlogger}")
+    st.caption("Scope logs/pcap: /var/aux ; mesures Dewesoft CSV support (d7d/dxd via extension future).")
 
 
 def main() -> int:
-    """CLI fallback when executed directly via Python."""
     try:
         run_streamlit_app()
     except RuntimeError as exc:

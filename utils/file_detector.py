@@ -15,23 +15,15 @@ NETLOGGER_LOG_PATTERN = re.compile(r"^netlogger\.log(?:\..+)?\.gz$", re.IGNORECA
 
 
 def _find_aux_root(root: Path) -> Path | None:
-    """Find /var/aux inside extracted session folder."""
     root = root.resolve()
-
-    # Case 1: provided root is already /var/aux
     if root.name == "aux" and root.parent.name == "var":
         return root
-
-    # Case 2: provided root is /var
     candidate = root / "aux"
     if root.name == "var" and candidate.is_dir():
         return candidate
-
-    # Case 3: search recursively for .../var/aux
     for aux_candidate in root.rglob("aux"):
         if aux_candidate.is_dir() and aux_candidate.parent.name == "var":
             return aux_candidate
-
     return None
 
 
@@ -55,8 +47,15 @@ def _is_netlogger_log(name: str) -> bool:
     return lower == "netlogger.log" or NETLOGGER_LOG_PATTERN.fullmatch(lower) is not None
 
 
+def _is_dewesoft_csv(path: Path) -> bool:
+    if path.suffix.lower() != ".csv":
+        return False
+    lower = str(path).lower()
+    return any(token in lower for token in ("dewesoft", "dewe", "measure", "measurement", "daq"))
+
+
 def detect_session_files(root: Path) -> DetectedFiles:
-    """Detect relevant files under /var/aux according to strict session policy."""
+    """Detect relevant files for generic V2G debug workflow."""
     root = root.expanduser().resolve()
     if not root.exists() or not root.is_dir():
         raise ValueError(f"Invalid session folder: {root}")
@@ -65,25 +64,32 @@ def detect_session_files(root: Path) -> DetectedFiles:
     aux_root = _find_aux_root(root)
 
     if aux_root is None:
-        # No /var/aux found: everything is ignored by policy.
         for path in root.rglob("*"):
             if path.is_file():
-                detected.ignored_files.append(path)
+                if _is_dewesoft_csv(path):
+                    detected.dewesoft_csv.append(path)
+                else:
+                    detected.ignored_files.append(path)
+        detected.dewesoft_csv.sort()
         detected.ignored_files.sort()
         return detected
 
     detected.aux_root = aux_root
 
-    # 1) Everything outside /var/aux is ignored.
     for path in root.rglob("*"):
         if not path.is_file():
             continue
+
+        # Dewesoft CSV can be outside /var/aux.
+        if _is_dewesoft_csv(path):
+            detected.dewesoft_csv.append(path)
+            continue
+
         try:
             path.relative_to(aux_root)
         except ValueError:
             detected.ignored_files.append(path)
 
-    # 2) Inside /var/aux, keep only selected subfolders and accepted patterns.
     for path in aux_root.rglob("*"):
         if not path.is_file():
             continue
@@ -133,6 +139,7 @@ def detect_session_files(root: Path) -> DetectedFiles:
         "iotc_meter_dispatcher",
         "netlogger_pcaps",
         "netlogger_logs",
+        "dewesoft_csv",
         "ignored_files",
     ):
         getattr(detected, attr).sort()

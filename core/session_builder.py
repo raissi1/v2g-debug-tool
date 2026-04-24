@@ -15,6 +15,7 @@ from core.models import DetectedFiles, Event
 from parsers.charger_app import parse_charger_app
 from parsers.energy_manager import parse_energy_manager
 from parsers.meter_dispatcher import parse_meter_dispatcher
+from parsers.dewesoft_csv import parse_dewesoft_csv
 
 ISO_TS_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?")
 NUMBER = r"([-+]?\d+(?:[\.,]\d+)?)"
@@ -167,45 +168,38 @@ def _events_from_log(path: Path, source_group: str = "generic") -> Iterable[Even
 
 
 def _events_from_measure(path: Path) -> Iterable[Event]:
+    # First stage for Dewesoft measurements: CSV support.
+    if path.suffix.lower() == ".csv":
+        events, _ = parse_dewesoft_csv(path)
+        for event in events:
+            yield event
+        return
+
+    # Fallback for non-Dewesoft files kept for extensibility.
     suffix = path.suffix.lower()
-
-    if suffix in {".csv", ".tsv"}:
-        sep = "\t" if suffix == ".tsv" else ","
-        frame = pd.read_csv(path, sep=sep)
-        if frame.empty:
+    if suffix in {".tsv", ".json"}:
+        try:
+            if suffix == ".tsv":
+                frame = pd.read_csv(path, sep="\t")
+                ts_column = next((c for c in frame.columns if "time" in c.lower() or "date" in c.lower()), None)
+                for idx, row in frame.iterrows():
+                    ts = _parse_timestamp(str(row[ts_column])) if ts_column else None
+                    payload = row.to_dict()
+                    payload.update({"source_group": "measure", "future_diagnostic_side": "to_be_inferred"})
+                    yield Event(timestamp=ts, source=path.name, event_type="physical_measurement", message=f"Measurement row #{idx}", payload=payload)
+            elif suffix == ".json":
+                with path.open("r", encoding="utf-8", errors="ignore") as stream:
+                    content = json.load(stream)
+                records = content if isinstance(content, list) else [content]
+                for idx, rec in enumerate(records):
+                    if not isinstance(rec, dict):
+                        rec = {"value": rec}
+                    ts_key = next((k for k in rec.keys() if "time" in k.lower() or "date" in k.lower()), None)
+                    ts = _parse_timestamp(str(rec[ts_key])) if ts_key else None
+                    rec.update({"source_group": "measure", "future_diagnostic_side": "to_be_inferred"})
+                    yield Event(timestamp=ts, source=path.name, event_type="physical_measurement", message=f"Measurement record #{idx}", payload=rec)
+        except Exception:
             return
-
-        ts_column = next((c for c in frame.columns if "time" in c.lower() or "date" in c.lower()), None)
-        for idx, row in frame.iterrows():
-            ts = _parse_timestamp(str(row[ts_column])) if ts_column else None
-            payload = row.to_dict()
-            payload.update({"source_group": "measure", "future_diagnostic_side": "to_be_inferred"})
-            yield Event(
-                timestamp=ts,
-                source=path.name,
-                event_type="physical_measurement",
-                message=f"Measurement row #{idx}",
-                payload=payload,
-            )
-
-    elif suffix == ".json":
-        with path.open("r", encoding="utf-8", errors="ignore") as stream:
-            content = json.load(stream)
-
-        records = content if isinstance(content, list) else [content]
-        for idx, rec in enumerate(records):
-            if not isinstance(rec, dict):
-                rec = {"value": rec}
-            ts_key = next((k for k in rec.keys() if "time" in k.lower() or "date" in k.lower()), None)
-            ts = _parse_timestamp(str(rec[ts_key])) if ts_key else None
-            rec.update({"source_group": "measure", "future_diagnostic_side": "to_be_inferred"})
-            yield Event(
-                timestamp=ts,
-                source=path.name,
-                event_type="physical_measurement",
-                message=f"Measurement record #{idx}",
-                payload=rec,
-            )
 
 
 def _events_from_pcap(path: Path) -> Iterable[Event]:
