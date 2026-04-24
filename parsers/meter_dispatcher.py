@@ -54,6 +54,24 @@ def _to_float(raw: str) -> float | None:
         return None
 
 
+def millivolts_to_volts(value_mv: float | int | None) -> float | None:
+    if value_mv is None:
+        return None
+    return float(value_mv) / 1000.0
+
+
+def milliamps_to_amps(value_ma: float | int | None) -> float | None:
+    if value_ma is None:
+        return None
+    return float(value_ma) / 1000.0
+
+
+def millihertz_to_hertz(value_mhz: float | int | None) -> float | None:
+    if value_mhz is None:
+        return None
+    return float(value_mhz) / 1000.0
+
+
 def _extract_physical_signals(line: str) -> dict[str, float | str]:
     signals: dict[str, float | str] = {}
     for key, patterns in PHYSICAL_PATTERNS.items():
@@ -114,22 +132,22 @@ def _extract_physical_signals(line: str) -> dict[str, float | str]:
                 signals["S_VA"] = s
 
             if u_mv is not None:
-                signals["U"] = u_mv / 1000.0
+                signals["U"] = millivolts_to_volts(u_mv)
                 signals["U_V"] = signals["U"]
             if i_ma is not None:
-                signals["I_A"] = i_ma / 1000.0
+                signals["I_A"] = milliamps_to_amps(i_ma)
 
             voltages: list[float] = []
             if ua_mv is not None:
-                signals["U_phase_A"] = ua_mv / 1000.0
+                signals["U_phase_A"] = millivolts_to_volts(ua_mv)
                 signals["U_phase_A_V"] = signals["U_phase_A"]
                 voltages.append(signals["U_phase_A"])
             if ub_mv is not None:
-                signals["U_phase_B"] = ub_mv / 1000.0
+                signals["U_phase_B"] = millivolts_to_volts(ub_mv)
                 signals["U_phase_B_V"] = signals["U_phase_B"]
                 voltages.append(signals["U_phase_B"])
             if uc_mv is not None:
-                signals["U_phase_C"] = uc_mv / 1000.0
+                signals["U_phase_C"] = millivolts_to_volts(uc_mv)
                 signals["U_phase_C_V"] = signals["U_phase_C"]
                 voltages.append(signals["U_phase_C"])
             if voltages:
@@ -139,17 +157,17 @@ def _extract_physical_signals(line: str) -> dict[str, float | str]:
                 signals["U_V"] = signals["U"]
 
             if ia_ma is not None:
-                signals["I_phase_A"] = ia_ma / 1000.0
+                signals["I_phase_A"] = milliamps_to_amps(ia_ma)
                 signals["I_phase_A_A"] = signals["I_phase_A"]
             if ib_ma is not None:
-                signals["I_phase_B"] = ib_ma / 1000.0
+                signals["I_phase_B"] = milliamps_to_amps(ib_ma)
                 signals["I_phase_B_A"] = signals["I_phase_B"]
             if ic_ma is not None:
-                signals["I_phase_C"] = ic_ma / 1000.0
+                signals["I_phase_C"] = milliamps_to_amps(ic_ma)
                 signals["I_phase_C_A"] = signals["I_phase_C"]
 
             if f_mhz is not None:
-                signals["frequency_Hz"] = f_mhz / 1000.0
+                signals["frequency_Hz"] = millihertz_to_hertz(f_mhz)
                 signals["frequency"] = signals["frequency_Hz"]
 
             signals["is_slice_measurement"] = True
