@@ -39,7 +39,12 @@ def _is_log_file(name: str) -> bool:
 
 def _is_pcap_file(name: str) -> bool:
     lower = name.lower()
-    return lower.endswith(".pcap") or lower.endswith(".pcap.gz")
+    return (
+        lower.endswith(".pcap")
+        or lower.endswith(".pcapng")
+        or lower.endswith(".pcap.gz")
+        or lower.endswith(".pcapng.gz")
+    )
 
 
 def _is_dewesoft_csv(path: Path) -> bool:
@@ -59,7 +64,7 @@ def _detect_full_test_structure(path: Path) -> str | None:
         return "acquisitions"
     if "log" in lower_parts:
         return "log"
-    if "pcap" in lower_parts:
+    if "pcap" in lower_parts or "pcaps" in lower_parts:
         return "pcap"
     return None
 

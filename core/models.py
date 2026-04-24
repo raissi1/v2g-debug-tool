@@ -55,6 +55,7 @@ class DetectedFiles:
         return [*self.dewesoft_csv, *self.dewesoft_raw]
 
     def to_summary(self) -> dict[str, Any]:
+        all_pcaps = [str(p) for p in self.pcaps]
         return {
             "root": str(self.root),
             "aux_root": str(self.aux_root) if self.aux_root else None,
@@ -65,6 +66,7 @@ class DetectedFiles:
             "netlogger_logs": [str(p) for p in self.netlogger_logs],
             "generic_logs": [str(p) for p in self.generic_logs],
             "generic_pcaps": [str(p) for p in self.generic_pcaps],
+            "pcaps": all_pcaps,
             "dewesoft_csv": [str(p) for p in self.dewesoft_csv],
             "dewesoft_raw": [str(p) for p in self.dewesoft_raw],
             "ignored_files": [str(p) for p in self.ignored_files],

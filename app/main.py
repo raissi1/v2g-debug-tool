@@ -56,6 +56,7 @@ def _resolve_input_source(
 
 
 def _compute_overview_metrics(session_df: pd.DataFrame, detected_summary: dict) -> dict[str, int]:
+    pcap_count = len(detected_summary.get("netlogger_pcaps", [])) + len(detected_summary.get("generic_pcaps", []))
     if session_df.empty:
         return {
             "files_analyzed": 0,
@@ -64,7 +65,7 @@ def _compute_overview_metrics(session_df: pd.DataFrame, detected_summary: dict) 
             "warnings": 0,
             "gridcodes": 0,
             "setpoints": 0,
-            "pcaps": len(detected_summary.get("netlogger_pcaps", [])),
+            "pcaps": pcap_count,
             "measures": len(detected_summary.get("dewesoft_csv", [])) + len(detected_summary.get("dewesoft_raw", [])),
         }
 
@@ -73,12 +74,11 @@ def _compute_overview_metrics(session_df: pd.DataFrame, detected_summary: dict) 
         len(detected_summary.get("energy_manager", []))
         + len(detected_summary.get("charger_app", []))
         + len(detected_summary.get("iotc_meter_dispatcher", []))
-        + len(detected_summary.get("netlogger_pcaps", []))
+        + pcap_count
         + len(detected_summary.get("netlogger_logs", []))
         + len(detected_summary.get("dewesoft_csv", []))
         + len(detected_summary.get("dewesoft_raw", []))
         + len(detected_summary.get("generic_logs", []))
-        + len(detected_summary.get("generic_pcaps", []))
     )
     return {
         "files_analyzed": files_count,
@@ -87,7 +87,7 @@ def _compute_overview_metrics(session_df: pd.DataFrame, detected_summary: dict) 
         "warnings": int(event_counts.get("warning", 0)),
         "gridcodes": int(event_counts.get("gridcodes", 0)),
         "setpoints": int(event_counts.get("setpoint", 0)),
-        "pcaps": len(detected_summary.get("netlogger_pcaps", [])),
+        "pcaps": pcap_count,
         "measures": len(detected_summary.get("dewesoft_csv", [])) + len(detected_summary.get("dewesoft_raw", [])),
     }
 
@@ -129,7 +129,9 @@ def run_streamlit_app() -> None:
             st.write(f"- EnergyManager: **{len(dsum.get('energy_manager', []))}**")
             st.write(f"- ChargerApp: **{len(dsum.get('charger_app', []))}**")
             st.write(f"- iotc-meter-dispatcher: **{len(dsum.get('iotc_meter_dispatcher', []))}**")
-            st.write(f"- netlogger PCAP: **{len(dsum.get('netlogger_pcaps', []))}**")
+            st.write(f"- PCAP total: **{len(dsum.get('netlogger_pcaps', [])) + len(dsum.get('generic_pcaps', []))}**")
+            st.write(f"  - netlogger PCAP: **{len(dsum.get('netlogger_pcaps', []))}**")
+            st.write(f"  - pcap/pcaps PCAP: **{len(dsum.get('generic_pcaps', []))}**")
             st.write(f"- mesures CSV: **{len(dsum.get('dewesoft_csv', []))}**")
             st.write(f"- mesures d7d/dxd: **{len(dsum.get('dewesoft_raw', []))}** (conversion requise)")
 
