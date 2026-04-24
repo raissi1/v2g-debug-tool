@@ -93,6 +93,8 @@ def _extract_physical_signals(line: str) -> dict[str, float | str]:
             p = _num("POWER_ACTIVE_W")
             q = _num("POWER_REACTIVE_var")
             s = _num("POWER_APPARENT_VA")
+            u_mv = _num("VOLTAGE_RMS_mV")
+            i_ma = _num("CURRENT_RMS_mA")
             ua_mv = _num("VOLTAGE_RMS_PHASE_A_mV")
             ub_mv = _num("VOLTAGE_RMS_PHASE_B_mV")
             uc_mv = _num("VOLTAGE_RMS_PHASE_C_mV")
@@ -103,31 +105,48 @@ def _extract_physical_signals(line: str) -> dict[str, float | str]:
 
             if p is not None:
                 signals["P"] = p
+                signals["P_W"] = p
             if q is not None:
                 signals["Q"] = q
+                signals["Q_var"] = q
             if s is not None:
                 signals["S"] = s
+                signals["S_VA"] = s
+
+            if u_mv is not None:
+                signals["U"] = u_mv / 1000.0
+                signals["U_V"] = signals["U"]
+            if i_ma is not None:
+                signals["I_A"] = i_ma / 1000.0
 
             voltages: list[float] = []
             if ua_mv is not None:
                 signals["U_phase_A"] = ua_mv / 1000.0
+                signals["U_phase_A_V"] = signals["U_phase_A"]
                 voltages.append(signals["U_phase_A"])
             if ub_mv is not None:
                 signals["U_phase_B"] = ub_mv / 1000.0
+                signals["U_phase_B_V"] = signals["U_phase_B"]
                 voltages.append(signals["U_phase_B"])
             if uc_mv is not None:
                 signals["U_phase_C"] = uc_mv / 1000.0
+                signals["U_phase_C_V"] = signals["U_phase_C"]
                 voltages.append(signals["U_phase_C"])
             if voltages:
                 signals["U_avg"] = sum(voltages) / len(voltages)
+                signals["U_avg_V"] = signals["U_avg"]
                 signals["U"] = signals["U_avg"]
+                signals["U_V"] = signals["U"]
 
             if ia_ma is not None:
                 signals["I_phase_A"] = ia_ma / 1000.0
+                signals["I_phase_A_A"] = signals["I_phase_A"]
             if ib_ma is not None:
                 signals["I_phase_B"] = ib_ma / 1000.0
+                signals["I_phase_B_A"] = signals["I_phase_B"]
             if ic_ma is not None:
                 signals["I_phase_C"] = ic_ma / 1000.0
+                signals["I_phase_C_A"] = signals["I_phase_C"]
 
             if f_mhz is not None:
                 signals["frequency_Hz"] = f_mhz / 1000.0

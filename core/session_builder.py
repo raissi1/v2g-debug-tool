@@ -280,16 +280,28 @@ def _add_physical_columns(frame: pd.DataFrame) -> pd.DataFrame:
     frame["Ptarget"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "Ptarget"))
     frame["Qtarget"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "Qtarget"))
     frame["P"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "P"))
+    frame["P_W"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "P_W"))
     frame["Q"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "Q"))
+    frame["Q_var"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "Q_var"))
+    frame["S_VA"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "S_VA"))
     frame["U"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "U"))
+    frame["U_V"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "U_V"))
     frame["U_avg"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "U_avg"))
+    frame["U_avg_V"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "U_avg_V"))
     frame["U_phase_A"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "U_phase_A"))
+    frame["U_phase_A_V"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "U_phase_A_V"))
     frame["U_phase_B"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "U_phase_B"))
+    frame["U_phase_B_V"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "U_phase_B_V"))
     frame["U_phase_C"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "U_phase_C"))
+    frame["U_phase_C_V"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "U_phase_C_V"))
     frame["S"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "S"))
+    frame["I_A"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "I_A"))
     frame["I_phase_A"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "I_phase_A"))
+    frame["I_phase_A_A"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "I_phase_A_A"))
     frame["I_phase_B"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "I_phase_B"))
+    frame["I_phase_B_A"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "I_phase_B_A"))
     frame["I_phase_C"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "I_phase_C"))
+    frame["I_phase_C_A"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "I_phase_C_A"))
     frame["frequency"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "frequency"))
     frame["frequency_Hz"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "frequency_Hz"))
     frame["AvailableDischargePower"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "AvailableDischargePower"))
@@ -303,16 +315,28 @@ def _add_physical_columns(frame: pd.DataFrame) -> pd.DataFrame:
         "Ptarget",
         "Qtarget",
         "P",
+        "P_W",
         "Q",
+        "Q_var",
+        "S_VA",
         "U",
+        "U_V",
         "U_avg",
+        "U_avg_V",
         "U_phase_A",
+        "U_phase_A_V",
         "U_phase_B",
+        "U_phase_B_V",
         "U_phase_C",
+        "U_phase_C_V",
         "S",
+        "I_A",
         "I_phase_A",
+        "I_phase_A_A",
         "I_phase_B",
+        "I_phase_B_A",
         "I_phase_C",
+        "I_phase_C_A",
         "frequency",
         "frequency_Hz",
         "AvailableDischargePower",
@@ -324,7 +348,10 @@ def _add_physical_columns(frame: pd.DataFrame) -> pd.DataFrame:
         frame[col] = pd.to_numeric(frame[col], errors="coerce")
 
     frame["U"] = frame["U"].combine_first(frame["U_avg"])
+    frame["U"] = frame["U"].combine_first(frame["U_V"])
     frame["frequency"] = frame["frequency"].combine_first(frame["frequency_Hz"])
+    frame["P"] = frame["P"].combine_first(frame["P_W"])
+    frame["Q"] = frame["Q"].combine_first(frame["Q_var"])
 
     # Reconstruct behavior timeline by timestamp proximity: propagate nearby values.
     frame["_ts"] = pd.to_datetime(frame["timestamp"], utc=True, errors="coerce")
@@ -333,16 +360,28 @@ def _add_physical_columns(frame: pd.DataFrame) -> pd.DataFrame:
         "Ptarget",
         "Qtarget",
         "P",
+        "P_W",
         "Q",
+        "Q_var",
+        "S_VA",
         "U",
+        "U_V",
         "U_avg",
+        "U_avg_V",
         "U_phase_A",
+        "U_phase_A_V",
         "U_phase_B",
+        "U_phase_B_V",
         "U_phase_C",
+        "U_phase_C_V",
         "S",
+        "I_A",
         "I_phase_A",
+        "I_phase_A_A",
         "I_phase_B",
+        "I_phase_B_A",
         "I_phase_C",
+        "I_phase_C_A",
         "frequency",
         "frequency_Hz",
         "AvailableDischargePower",
@@ -367,16 +406,28 @@ def _extract_value_snapshot(payload: dict) -> dict:
         "Ptarget",
         "Qtarget",
         "P",
+        "P_W",
         "Q",
+        "Q_var",
         "S",
+        "S_VA",
         "U",
+        "U_V",
         "U_avg",
+        "U_avg_V",
         "U_phase_A",
+        "U_phase_A_V",
         "U_phase_B",
+        "U_phase_B_V",
         "U_phase_C",
+        "U_phase_C_V",
+        "I_A",
         "I_phase_A",
+        "I_phase_A_A",
         "I_phase_B",
+        "I_phase_B_A",
         "I_phase_C",
+        "I_phase_C_A",
         "frequency",
         "frequency_Hz",
         "Pcalc",

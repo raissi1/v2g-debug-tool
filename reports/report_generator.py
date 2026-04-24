@@ -28,7 +28,9 @@ def generate_html_report(
             f"EnergyManager: {len(detected_summary.get('energy_manager', []))}",
             f"ChargerApp: {len(detected_summary.get('charger_app', []))}",
             f"Meter dispatcher: {len(detected_summary.get('iotc_meter_dispatcher', []))}",
+            f"PCAP total: {len(detected_summary.get('netlogger_pcaps', [])) + len(detected_summary.get('generic_pcaps', []))}",
             f"PCAP netlogger: {len(detected_summary.get('netlogger_pcaps', []))}",
+            f"PCAP pcap/pcaps: {len(detected_summary.get('generic_pcaps', []))}",
             f"Mesures Dewesoft CSV: {len(detected_summary.get('dewesoft_csv', []))}",
         ]
         files_html = _to_list_html(compact)

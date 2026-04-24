@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pandas as pd
+import re
 
 
 def _build_simplified_timeline(session_df: pd.DataFrame) -> pd.DataFrame:
@@ -77,8 +78,18 @@ def _build_reasoning_blocks(simplified: pd.DataFrame, issues: list[str]) -> dict
     requested = work[work[["Ptarget", "Qtarget"]].notna().any(axis=1)].head(25)
     for _, row in requested.iterrows():
         blocks["A_requested"].append(
-            f"{row['timestamp']} • demande Ptarget={_fmt_val(row.get('Ptarget'))} Qtarget={_fmt_val(row.get('Qtarget'))} ({row.get('source')})"
+            f"{row['timestamp']} • demande Ptarget={_fmt_val(row.get('Ptarget'))} W Qtarget={_fmt_val(row.get('Qtarget'))} var ({row.get('source')})"
         )
+
+    request_keywords = re.compile(
+        r"request\s*to\s*accept\s*setpoint|centralsetpoint|maxpower_w|charge\s*limit|discharge\s*limit|ocpp|ocpp_offline|cpd|\bev\b",
+        re.IGNORECASE,
+    )
+    keyword_rows = work[work["message"].astype(str).str.contains(request_keywords, na=False)].head(25)
+    for _, row in keyword_rows.iterrows():
+        if len(blocks["A_requested"]) >= 25:
+            break
+        blocks["A_requested"].append(f"{row['timestamp']} • demande/contrainte: {row.get('message')[:220]}")
 
     computed = work[
         work[["Pcalc", "Qcalc", "Smax", "derating"]].notna().any(axis=1)
@@ -88,6 +99,16 @@ def _build_reasoning_blocks(simplified: pd.DataFrame, issues: list[str]) -> dict
         blocks["B_station_computed"].append(
             f"{row['timestamp']} • calcul borne Pcalc={_fmt_val(row.get('Pcalc'))} Qcalc={_fmt_val(row.get('Qcalc'))} Smax={_fmt_val(row.get('Smax'))} derating={_fmt_val(row.get('derating'))} ({row.get('source')})"
         )
+
+    published_keywords = re.compile(
+        r"setpoint\s*is\s*recalculated\s*and\s*published|published|centralsetpoint|maxpower_w|limit|ocpp|cpd|ev",
+        re.IGNORECASE,
+    )
+    published_rows = work[work["message"].astype(str).str.contains(published_keywords, na=False)].head(25)
+    for _, row in published_rows.iterrows():
+        if len(blocks["B_station_computed"]) >= 25:
+            break
+        blocks["B_station_computed"].append(f"{row['timestamp']} • publication borne: {row.get('message')[:220]}")
 
     sent = work[
         (work["event_type"].isin(["setpoint", "protocol_event"]))
@@ -106,7 +127,7 @@ def _build_reasoning_blocks(simplified: pd.DataFrame, issues: list[str]) -> dict
         u_value = row.get("U") if not pd.isna(row.get("U")) else row.get("U_avg")
         f_value = row.get("frequency") if not pd.isna(row.get("frequency")) else row.get("frequency_Hz")
         blocks["D_measured"].append(
-            f"{row['timestamp']} • mesure P={_fmt_val(row.get('P'))} Q={_fmt_val(row.get('Q'))} U={_fmt_val(u_value)} f={_fmt_val(f_value)} ({row.get('source')})"
+            f"{row['timestamp']} • mesure P={_fmt_val(row.get('P'))} W, Q={_fmt_val(row.get('Q'))} var, U={_fmt_val(u_value)} V, f={_fmt_val(f_value)} Hz ({row.get('source')})"
         )
 
     blocks["E_anomalies"].extend(issues)
