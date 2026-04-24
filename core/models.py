@@ -10,22 +10,22 @@ from typing import Any
 
 @dataclass
 class DetectedFiles:
-    """Represents the set of files detected in a session directory."""
+    """Represents the set of relevant files detected in a session package."""
 
     root: Path
-    energy_manager: list[Path] = field(default_factory=list)
-    charger_app: list[Path] = field(default_factory=list)
-    iotc_meter_dispatcher: list[Path] = field(default_factory=list)
+    aux_root: Path | None = None
 
-    pcaps: list[Path] = field(default_factory=list)
-    measures: list[Path] = field(default_factory=list)
-    logs: list[Path] = field(default_factory=list)
-    configs: list[Path] = field(default_factory=list)
-    others: list[Path] = field(default_factory=list)
+    charger_app: list[Path] = field(default_factory=list)
+    energy_manager: list[Path] = field(default_factory=list)
+    iotc_meter_dispatcher: list[Path] = field(default_factory=list)
+    netlogger_pcaps: list[Path] = field(default_factory=list)
+    netlogger_logs: list[Path] = field(default_factory=list)
+
+    ignored_files: list[Path] = field(default_factory=list)
 
     def all_text_logs(self) -> list[Path]:
         """Return deduplicated list of text logs to parse into timeline events."""
-        ordered = [*self.energy_manager, *self.charger_app, *self.iotc_meter_dispatcher, *self.logs]
+        ordered = [*self.charger_app, *self.energy_manager, *self.iotc_meter_dispatcher, *self.netlogger_logs]
         seen: set[Path] = set()
         unique: list[Path] = []
         for path in ordered:
@@ -34,17 +34,26 @@ class DetectedFiles:
                 seen.add(path)
         return unique
 
+    @property
+    def pcaps(self) -> list[Path]:
+        """Backward-compatible alias used by session builder."""
+        return self.netlogger_pcaps
+
+    @property
+    def measures(self) -> list[Path]:
+        """No measure files are retained by the strict /var/aux policy."""
+        return []
+
     def to_summary(self) -> dict[str, Any]:
         return {
             "root": str(self.root),
-            "energy_manager": [str(p) for p in self.energy_manager],
+            "aux_root": str(self.aux_root) if self.aux_root else None,
             "charger_app": [str(p) for p in self.charger_app],
+            "energy_manager": [str(p) for p in self.energy_manager],
             "iotc_meter_dispatcher": [str(p) for p in self.iotc_meter_dispatcher],
-            "pcaps": [str(p) for p in self.pcaps],
-            "measures": [str(p) for p in self.measures],
-            "logs": [str(p) for p in self.logs],
-            "configs": [str(p) for p in self.configs],
-            "others": [str(p) for p in self.others],
+            "netlogger_pcaps": [str(p) for p in self.netlogger_pcaps],
+            "netlogger_logs": [str(p) for p in self.netlogger_logs],
+            "ignored_files": [str(p) for p in self.ignored_files],
         }
 
 

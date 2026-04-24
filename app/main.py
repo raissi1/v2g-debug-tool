@@ -112,8 +112,19 @@ def run_streamlit_app() -> None:
             detected = detect_session_files(session_dir)
             session_df = build_session_timeline(detected)
 
-            st.subheader("Fichiers détectés")
-            st.json(detected.to_summary())
+            st.subheader("Fichiers de session pertinents (/var/aux)")
+            summary = detected.to_summary()
+            relevant_summary = {
+                "root": summary.get("root"),
+                "aux_root": summary.get("aux_root"),
+                "charger_app": summary.get("charger_app", []),
+                "energy_manager": summary.get("energy_manager", []),
+                "iotc_meter_dispatcher": summary.get("iotc_meter_dispatcher", []),
+                "netlogger_pcaps": summary.get("netlogger_pcaps", []),
+                "netlogger_logs": summary.get("netlogger_logs", []),
+            }
+            st.json(relevant_summary)
+            st.caption(f"Fichiers ignorés par la politique de détection: {len(summary.get('ignored_files', []))}")
 
             st.subheader("Analyse")
             for line in summarize_session(session_df):
@@ -148,7 +159,7 @@ def run_streamlit_app() -> None:
                 temp_dir.cleanup()
 
     st.markdown("---")
-    st.caption("Détection automatique: EnergyManager • ChargerApp • iotc-meter-dispatcher • PCAP • mesures")
+    st.caption("Détection stricte: uniquement /var/aux/{ChargerApp, EnergyManager, iotc-meter-dispatcher, netlogger}")
 
 
 def main() -> int:

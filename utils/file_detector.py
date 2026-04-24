@@ -1,121 +1,139 @@
-"""File detection layer for generic V2G session inputs."""
+"""Strict session file detection scoped to /var/aux package contents."""
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from core.models import DetectedFiles
 
-LOG_EXTENSIONS = {".log", ".txt", ".jsonl"}
-LOG_COMPRESSION_SUFFIXES = {".log.gz", ".txt.gz", ".jsonl.gz"}
-PCAP_EXTENSIONS = {".pcap", ".pcapng", ".cap"}
-PCAP_COMPRESSION_SUFFIXES = {".pcap.gz", ".pcapng.gz", ".cap.gz"}
-MEASURE_EXTENSIONS = {".csv", ".tsv", ".json"}
-CONFIG_EXTENSIONS = {".properties", ".conf", ".ini", ".yaml", ".yml"}
+ALLOWED_AUX_DIRS = {"ChargerApp", "EnergyManager", "iotc-meter-dispatcher", "netlogger"}
+CONFIG_EXTENSIONS = {".properties", ".conf", ".ini", ".yaml", ".yml", ".json", ".xml", ".cfg"}
 
-MEASURE_HINTS = {"measure", "meter", "telemetry", "signal", "timeseries"}
-ENERGY_MANAGER_HINTS = {"energymanager", "energy_manager"}
-CHARGER_APP_HINTS = {"chargerapp", "charger_app"}
-METER_DISPATCHER_HINTS = {"iotc-meter-dispatcher", "meter_dispatcher", "dispatcher"}
-
-EXTENSIONLESS_LOG_DIR_HINTS = {
-    "log",
-    "energymanager",
-    "chargerapp",
-    "iotc-meter-dispatcher",
-}
-EXTENSIONLESS_LOG_NAME_HINTS = {"log", "trace", "journal", "event"}
+LOG_PATTERN = re.compile(r".+\.log(?:\..+)?\.gz$", re.IGNORECASE)
+NETLOGGER_LOG_PATTERN = re.compile(r"^netlogger\.log(?:\..+)?\.gz$", re.IGNORECASE)
 
 
-def _matches_any_hint(path: Path, hints: set[str]) -> bool:
-    lower_name = path.name.lower()
-    return any(hint in lower_name for hint in hints)
+def _find_aux_root(root: Path) -> Path | None:
+    """Find /var/aux inside extracted session folder."""
+    root = root.resolve()
 
+    # Case 1: provided root is already /var/aux
+    if root.name == "aux" and root.parent.name == "var":
+        return root
 
-def _path_parts_lower(path: Path) -> set[str]:
-    return {part.lower() for part in path.parts}
+    # Case 2: provided root is /var
+    candidate = root / "aux"
+    if root.name == "var" and candidate.is_dir():
+        return candidate
 
+    # Case 3: search recursively for .../var/aux
+    for aux_candidate in root.rglob("aux"):
+        if aux_candidate.is_dir() and aux_candidate.parent.name == "var":
+            return aux_candidate
 
-def _is_measure_file(path: Path) -> bool:
-    return _matches_any_hint(path, MEASURE_HINTS)
+    return None
 
 
 def _is_config_file(path: Path) -> bool:
-    lower_name = path.name.lower()
-    return path.suffix.lower() in CONFIG_EXTENSIONS or lower_name.endswith(".properties")
-
-
-def _is_pcap_candidate(path: Path) -> bool:
-    lower_name = path.name.lower()
     suffix = path.suffix.lower()
-    parts = _path_parts_lower(path)
-
-    if suffix in PCAP_EXTENSIONS or any(lower_name.endswith(suf) for suf in PCAP_COMPRESSION_SUFFIXES):
-        return True
-
-    # In many datasets, netlogger contains capture artifacts, sometimes extensionless.
-    if "netlogger" in parts and (suffix == "" or "pcap" in lower_name):
-        return True
-
-    return False
+    return suffix in CONFIG_EXTENSIONS or path.name.lower().endswith(".properties")
 
 
-def _is_log_candidate(path: Path) -> bool:
-    lower_name = path.name.lower()
-    suffix = path.suffix.lower()
+def _is_log_file(name: str) -> bool:
+    lower = name.lower()
+    return lower.endswith(".log") or LOG_PATTERN.fullmatch(lower) is not None
 
-    if suffix in LOG_EXTENSIONS or any(lower_name.endswith(suf) for suf in LOG_COMPRESSION_SUFFIXES):
-        return True
 
-    if suffix:
-        return False
+def _is_netlogger_pcap(name: str) -> bool:
+    lower = name.lower()
+    return lower.endswith(".pcap") or lower.endswith(".pcap.gz")
 
-    parts = _path_parts_lower(path.parent)
-    in_log_folder = any(hint in parts for hint in EXTENSIONLESS_LOG_DIR_HINTS)
-    log_like_name = any(hint in lower_name for hint in EXTENSIONLESS_LOG_NAME_HINTS)
-    return in_log_folder or log_like_name
+
+def _is_netlogger_log(name: str) -> bool:
+    lower = name.lower()
+    return lower == "netlogger.log" or NETLOGGER_LOG_PATTERN.fullmatch(lower) is not None
 
 
 def detect_session_files(root: Path) -> DetectedFiles:
-    """Detect session artifacts recursively for generic V2G debugging."""
+    """Detect relevant files under /var/aux according to strict session policy."""
     root = root.expanduser().resolve()
     if not root.exists() or not root.is_dir():
         raise ValueError(f"Invalid session folder: {root}")
 
     detected = DetectedFiles(root=root)
+    aux_root = _find_aux_root(root)
 
+    if aux_root is None:
+        # No /var/aux found: everything is ignored by policy.
+        for path in root.rglob("*"):
+            if path.is_file():
+                detected.ignored_files.append(path)
+        detected.ignored_files.sort()
+        return detected
+
+    detected.aux_root = aux_root
+
+    # 1) Everything outside /var/aux is ignored.
     for path in root.rglob("*"):
         if not path.is_file():
             continue
+        try:
+            path.relative_to(aux_root)
+        except ValueError:
+            detected.ignored_files.append(path)
 
-        if _matches_any_hint(path, ENERGY_MANAGER_HINTS):
-            detected.energy_manager.append(path)
-        elif _matches_any_hint(path, CHARGER_APP_HINTS):
-            detected.charger_app.append(path)
-        elif _matches_any_hint(path, METER_DISPATCHER_HINTS):
-            detected.iotc_meter_dispatcher.append(path)
+    # 2) Inside /var/aux, keep only selected subfolders and accepted patterns.
+    for path in aux_root.rglob("*"):
+        if not path.is_file():
+            continue
 
-        suffix = path.suffix.lower()
+        relative_parts = path.relative_to(aux_root).parts
+        if not relative_parts:
+            detected.ignored_files.append(path)
+            continue
+
+        top_level = relative_parts[0]
+        filename = path.name
+
+        if top_level not in ALLOWED_AUX_DIRS:
+            detected.ignored_files.append(path)
+            continue
+
         if _is_config_file(path):
-            detected.configs.append(path)
-        elif _is_pcap_candidate(path):
-            detected.pcaps.append(path)
-        elif suffix in MEASURE_EXTENSIONS and _is_measure_file(path):
-            detected.measures.append(path)
-        elif _is_log_candidate(path):
-            detected.logs.append(path)
-        else:
-            detected.others.append(path)
+            detected.ignored_files.append(path)
+            continue
+
+        if top_level == "ChargerApp":
+            if _is_log_file(filename):
+                detected.charger_app.append(path)
+            else:
+                detected.ignored_files.append(path)
+        elif top_level == "EnergyManager":
+            if _is_log_file(filename):
+                detected.energy_manager.append(path)
+            else:
+                detected.ignored_files.append(path)
+        elif top_level == "iotc-meter-dispatcher":
+            if _is_log_file(filename):
+                detected.iotc_meter_dispatcher.append(path)
+            else:
+                detected.ignored_files.append(path)
+        elif top_level == "netlogger":
+            if _is_netlogger_pcap(filename):
+                detected.netlogger_pcaps.append(path)
+            elif _is_netlogger_log(filename):
+                detected.netlogger_logs.append(path)
+            else:
+                detected.ignored_files.append(path)
 
     for attr in (
-        "energy_manager",
         "charger_app",
+        "energy_manager",
         "iotc_meter_dispatcher",
-        "pcaps",
-        "measures",
-        "logs",
-        "configs",
-        "others",
+        "netlogger_pcaps",
+        "netlogger_logs",
+        "ignored_files",
     ):
         getattr(detected, attr).sort()
 
