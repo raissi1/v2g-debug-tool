@@ -250,7 +250,7 @@ def run_streamlit_app() -> None:
         st.markdown("### Graphes physiques")
         has_measure = not timeseries.empty and any(
             col in timeseries.columns and pd.to_numeric(timeseries[col], errors="coerce").notna().any()
-            for col in ["P", "Q", "U", "frequency"]
+            for col in ["P", "Q", "S", "U", "U_avg", "frequency", "frequency_Hz"]
         )
         if has_measure:
             st.plotly_chart(build_signal_figure(timeseries), use_container_width=True)

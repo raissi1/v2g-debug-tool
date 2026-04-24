@@ -70,6 +70,7 @@ FOCUS_EVENT_TYPES = {
     "protocol_event",
     "session_event",
     "physical_measurement",
+    "measurement",
     "state_change",
 }
 
@@ -281,7 +282,16 @@ def _add_physical_columns(frame: pd.DataFrame) -> pd.DataFrame:
     frame["P"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "P"))
     frame["Q"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "Q"))
     frame["U"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "U"))
+    frame["U_avg"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "U_avg"))
+    frame["U_phase_A"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "U_phase_A"))
+    frame["U_phase_B"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "U_phase_B"))
+    frame["U_phase_C"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "U_phase_C"))
+    frame["S"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "S"))
+    frame["I_phase_A"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "I_phase_A"))
+    frame["I_phase_B"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "I_phase_B"))
+    frame["I_phase_C"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "I_phase_C"))
     frame["frequency"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "frequency"))
+    frame["frequency_Hz"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "frequency_Hz"))
     frame["AvailableDischargePower"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "AvailableDischargePower"))
     frame["Pcalc"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "Pcalc"))
     frame["Qcalc"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "Qcalc"))
@@ -289,13 +299,59 @@ def _add_physical_columns(frame: pd.DataFrame) -> pd.DataFrame:
     frame["derating"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "derating"))
     frame["state"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "state"))
 
-    for col in ("Ptarget", "Qtarget", "P", "Q", "U", "frequency", "AvailableDischargePower", "Pcalc", "Qcalc", "Smax", "derating"):
+    for col in (
+        "Ptarget",
+        "Qtarget",
+        "P",
+        "Q",
+        "U",
+        "U_avg",
+        "U_phase_A",
+        "U_phase_B",
+        "U_phase_C",
+        "S",
+        "I_phase_A",
+        "I_phase_B",
+        "I_phase_C",
+        "frequency",
+        "frequency_Hz",
+        "AvailableDischargePower",
+        "Pcalc",
+        "Qcalc",
+        "Smax",
+        "derating",
+    ):
         frame[col] = pd.to_numeric(frame[col], errors="coerce")
+
+    frame["U"] = frame["U"].combine_first(frame["U_avg"])
+    frame["frequency"] = frame["frequency"].combine_first(frame["frequency_Hz"])
 
     # Reconstruct behavior timeline by timestamp proximity: propagate nearby values.
     frame["_ts"] = pd.to_datetime(frame["timestamp"], utc=True, errors="coerce")
     frame = frame.sort_values(by=["_ts", "source", "event_type"], na_position="last")
-    for col in ("Ptarget", "Qtarget", "P", "Q", "U", "frequency", "AvailableDischargePower", "Pcalc", "Qcalc", "Smax", "derating", "state"):
+    for col in (
+        "Ptarget",
+        "Qtarget",
+        "P",
+        "Q",
+        "U",
+        "U_avg",
+        "U_phase_A",
+        "U_phase_B",
+        "U_phase_C",
+        "S",
+        "I_phase_A",
+        "I_phase_B",
+        "I_phase_C",
+        "frequency",
+        "frequency_Hz",
+        "AvailableDischargePower",
+        "Pcalc",
+        "Qcalc",
+        "Smax",
+        "derating",
+        "state",
+    ):
         frame[col] = frame[col].ffill()
 
     # Build a coarse merged index for close timestamps (1-second bins).
@@ -307,7 +363,29 @@ def _add_physical_columns(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def _extract_value_snapshot(payload: dict) -> dict:
-    keys = ["Ptarget", "Qtarget", "P", "Q", "U", "frequency", "Pcalc", "Qcalc", "Smax", "derating", "state", "AvailableDischargePower"]
+    keys = [
+        "Ptarget",
+        "Qtarget",
+        "P",
+        "Q",
+        "S",
+        "U",
+        "U_avg",
+        "U_phase_A",
+        "U_phase_B",
+        "U_phase_C",
+        "I_phase_A",
+        "I_phase_B",
+        "I_phase_C",
+        "frequency",
+        "frequency_Hz",
+        "Pcalc",
+        "Qcalc",
+        "Smax",
+        "derating",
+        "state",
+        "AvailableDischargePower",
+    ]
     return {k: payload.get(k) for k in keys if k in payload and payload.get(k) is not None}
 
 
@@ -315,6 +393,7 @@ def _short_interpretation(event_type: str) -> str:
     mapping = {
         "setpoint": "Consigne détectée",
         "physical_measurement": "Mesure physique détectée",
+        "measurement": "Mesure iotc-meter détectée",
         "state_change": "Changement d'état de session",
         "error": "Erreur applicative",
         "warning": "Avertissement applicatif",

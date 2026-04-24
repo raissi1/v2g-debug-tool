@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import ast
 import gzip
+import json
 import re
 from datetime import datetime
 from pathlib import Path
@@ -64,21 +66,74 @@ def _extract_physical_signals(line: str) -> dict[str, float | str]:
                     break
 
 
-    # Slice parser: e.g. "Slice ... P=12.3 Q=-1.2 U=229.8 F=50.0"
-    slice_match = re.search(r"slice[^\n]*", line, re.IGNORECASE)
+    # Slice parser for JSON payloads after "Slice:".
+    slice_match = re.search(r"slice\s*:\s*(\{.*\})", line, re.IGNORECASE)
     if slice_match:
-        slice_text = slice_match.group(0)
-        for key, pattern in {
-            "P": re.compile(rf"\bP\s*[=:]\s*{NUMBER}", re.IGNORECASE),
-            "Q": re.compile(rf"\bQ\s*[=:]\s*{NUMBER}", re.IGNORECASE),
-            "U": re.compile(rf"\bU\s*[=:]\s*{NUMBER}", re.IGNORECASE),
-            "frequency": re.compile(rf"(?:\bF\b|freq(?:uency)?)\s*[=:]\s*{NUMBER}", re.IGNORECASE),
-        }.items():
-            m = pattern.search(slice_text)
-            if m:
-                value = _to_float(m.group(1))
-                if value is not None:
-                    signals[key] = value
+        payload_raw = slice_match.group(1).strip()
+        data: dict | None = None
+        try:
+            loaded = json.loads(payload_raw)
+            if isinstance(loaded, dict):
+                data = loaded
+        except json.JSONDecodeError:
+            try:
+                loaded = ast.literal_eval(payload_raw)
+                if isinstance(loaded, dict):
+                    data = loaded
+            except (ValueError, SyntaxError):
+                data = None
+
+        if data:
+            def _num(key: str) -> float | None:
+                raw = data.get(key)
+                if raw is None:
+                    return None
+                return _to_float(str(raw))
+
+            p = _num("POWER_ACTIVE_W")
+            q = _num("POWER_REACTIVE_var")
+            s = _num("POWER_APPARENT_VA")
+            ua_mv = _num("VOLTAGE_RMS_PHASE_A_mV")
+            ub_mv = _num("VOLTAGE_RMS_PHASE_B_mV")
+            uc_mv = _num("VOLTAGE_RMS_PHASE_C_mV")
+            ia_ma = _num("CURRENT_RMS_PHASE_A_mA")
+            ib_ma = _num("CURRENT_RMS_PHASE_B_mA")
+            ic_ma = _num("CURRENT_RMS_PHASE_C_mA")
+            f_mhz = _num("FREQUENCY_mHz")
+
+            if p is not None:
+                signals["P"] = p
+            if q is not None:
+                signals["Q"] = q
+            if s is not None:
+                signals["S"] = s
+
+            voltages: list[float] = []
+            if ua_mv is not None:
+                signals["U_phase_A"] = ua_mv / 1000.0
+                voltages.append(signals["U_phase_A"])
+            if ub_mv is not None:
+                signals["U_phase_B"] = ub_mv / 1000.0
+                voltages.append(signals["U_phase_B"])
+            if uc_mv is not None:
+                signals["U_phase_C"] = uc_mv / 1000.0
+                voltages.append(signals["U_phase_C"])
+            if voltages:
+                signals["U_avg"] = sum(voltages) / len(voltages)
+                signals["U"] = signals["U_avg"]
+
+            if ia_ma is not None:
+                signals["I_phase_A"] = ia_ma / 1000.0
+            if ib_ma is not None:
+                signals["I_phase_B"] = ib_ma / 1000.0
+            if ic_ma is not None:
+                signals["I_phase_C"] = ic_ma / 1000.0
+
+            if f_mhz is not None:
+                signals["frequency_Hz"] = f_mhz / 1000.0
+                signals["frequency"] = signals["frequency_Hz"]
+
+            signals["is_slice_measurement"] = True
 
     for state_name, pattern in STATE_PATTERNS:
         if pattern.search(line):
@@ -89,6 +144,8 @@ def _extract_physical_signals(line: str) -> dict[str, float | str]:
 
 
 def _physical_event_type(signals: dict[str, float | str]) -> str | None:
+    if signals.get("is_slice_measurement"):
+        return "measurement"
     if "state" in signals:
         return "state_change"
     if "Ptarget" in signals or "Qtarget" in signals:

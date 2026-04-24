@@ -6,7 +6,7 @@ import pandas as pd
 import plotly.graph_objects as go
 
 
-SIGNALS = ["P", "Q", "U", "frequency", "Ptarget", "Qtarget"]
+SIGNALS = ["P", "Q", "S", "U_avg", "U_phase_A", "U_phase_B", "U_phase_C", "frequency_Hz", "Ptarget", "Qtarget"]
 
 
 def build_signal_figure(timeseries: pd.DataFrame) -> go.Figure:

@@ -14,7 +14,7 @@ def _build_simplified_timeline(session_df: pd.DataFrame) -> pd.DataFrame:
     df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True, errors="coerce")
     df = df.dropna(subset=["timestamp"]).sort_values("timestamp")
 
-    for col in ["Ptarget", "Qtarget", "P", "Q", "U", "frequency", "Pcalc", "Qcalc", "Smax", "derating"]:
+    for col in ["Ptarget", "Qtarget", "P", "Q", "S", "U", "U_avg", "frequency", "frequency_Hz", "Pcalc", "Qcalc", "Smax", "derating"]:
         if col not in df.columns:
             df[col] = pd.NA
         df[col] = pd.to_numeric(df[col], errors="coerce")
@@ -27,8 +27,11 @@ def _build_simplified_timeline(session_df: pd.DataFrame) -> pd.DataFrame:
         "Qtarget",
         "P",
         "Q",
+        "S",
         "U",
+        "U_avg",
         "frequency",
+        "frequency_Hz",
         "Pcalc",
         "Qcalc",
         "Smax",
@@ -98,10 +101,12 @@ def _build_reasoning_blocks(simplified: pd.DataFrame, issues: list[str]) -> dict
             f"{row['timestamp']} • envoyé EV ({row.get('event_type')}): {row.get('message')[:220]}"
         )
 
-    measured = work[work[["P", "Q", "U", "frequency"]].notna().any(axis=1)].head(25)
+    measured = work[work[["P", "Q", "S", "U", "U_avg", "frequency", "frequency_Hz"]].notna().any(axis=1)].head(25)
     for _, row in measured.iterrows():
+        u_value = row.get("U") if not pd.isna(row.get("U")) else row.get("U_avg")
+        f_value = row.get("frequency") if not pd.isna(row.get("frequency")) else row.get("frequency_Hz")
         blocks["D_measured"].append(
-            f"{row['timestamp']} • mesure P={_fmt_val(row.get('P'))} Q={_fmt_val(row.get('Q'))} U={_fmt_val(row.get('U'))} f={_fmt_val(row.get('frequency'))} ({row.get('source')})"
+            f"{row['timestamp']} • mesure P={_fmt_val(row.get('P'))} Q={_fmt_val(row.get('Q'))} U={_fmt_val(u_value)} f={_fmt_val(f_value)} ({row.get('source')})"
         )
 
     blocks["E_anomalies"].extend(issues)
