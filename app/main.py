@@ -206,6 +206,8 @@ def run_streamlit_app() -> None:
                 f"{len(detected_summary.get('iotc_meter_dispatcher', []))} fichier(s) meter dispatcher."
             )
             st.write(readable_summary)
+            st.markdown("**Résumé exécutif**")
+            st.info(diagnostic.get("executive_summary", "Résumé non disponible."))
 
     with tabs[1]:
         st.markdown("### Timeline filtrable")
@@ -228,7 +230,7 @@ def run_streamlit_app() -> None:
             if text_query:
                 filtered = filtered[filtered["message"].astype(str).str.contains(text_query, case=False, na=False)]
 
-            visible_columns = [c for c in ["timestamp", "source", "event_type", "message"] if c in filtered.columns]
+            visible_columns = [c for c in ["timestamp", "source", "event_type", "message", "interpretation"] if c in filtered.columns]
             st.dataframe(filtered[visible_columns], use_container_width=True)
 
     with tabs[2]:
@@ -263,7 +265,7 @@ def run_streamlit_app() -> None:
     with tabs[4]:
         st.markdown("### Conclusion diagnostic")
         conclusion = diagnostic.get("conclusion", "Indéterminé")
-        confidence = "Moyenne" if conclusion != "Indéterminé" else "Faible"
+        confidence = diagnostic.get("confidence", "Faible")
         issues = diagnostic.get("issues", [])
 
         st.success(f"Origine probable : **{conclusion}**")
@@ -273,16 +275,17 @@ def run_streamlit_app() -> None:
         for issue in issues:
             st.write(f"- {issue}")
 
-        missing_data = []
-        for key in ["P", "Ptarget", "U"]:
-            if key not in session_df.columns or pd.to_numeric(session_df[key], errors="coerce").dropna().empty:
-                missing_data.append(key)
+        st.markdown("**Preuves utilisées**")
+        for ev in diagnostic.get("evidence", []):
+            st.write(f"- {ev}")
+
         st.markdown("**Données manquantes**")
+        missing_data = diagnostic.get("missing_data", [])
         st.write(", ".join(missing_data) if missing_data else "Aucune donnée critique manquante détectée.")
 
     with tabs[5]:
         st.markdown("### Export rapport")
-        report_html = generate_html_report(summary_lines, diagnostic, session_df)
+        report_html = generate_html_report(summary_lines, diagnostic, session_df, detected_summary)
         st.download_button(
             "Télécharger rapport HTML",
             data=report_html.encode("utf-8"),

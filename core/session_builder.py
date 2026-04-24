@@ -295,6 +295,27 @@ def _add_physical_columns(frame: pd.DataFrame) -> pd.DataFrame:
     return frame
 
 
+
+
+def _extract_value_snapshot(payload: dict) -> dict:
+    keys = ["Ptarget", "Qtarget", "P", "Q", "U", "frequency", "state", "AvailableDischargePower"]
+    return {k: payload.get(k) for k in keys if k in payload and payload.get(k) is not None}
+
+
+def _short_interpretation(event_type: str) -> str:
+    mapping = {
+        "setpoint": "Consigne détectée",
+        "physical_measurement": "Mesure physique détectée",
+        "state_change": "Changement d'état de session",
+        "error": "Erreur applicative",
+        "warning": "Avertissement applicatif",
+        "timeout": "Timeout de communication",
+        "protocol_event": "Événement protocolaire",
+        "gridcodes": "Événement GridCode",
+        "power_limit": "Limitation interne",
+        "session_event": "Événement de session",
+    }
+    return mapping.get(event_type, "Événement générique")
 def build_session_timeline(detected: DetectedFiles) -> pd.DataFrame:
     """Create a focused timeline DataFrame for generic V2G session debugging."""
     events: list[Event] = []
@@ -316,6 +337,9 @@ def build_session_timeline(detected: DetectedFiles) -> pd.DataFrame:
                 "event_type": e.event_type,
                 "message": e.message,
                 "payload": e.payload,
+                "extracted_value": _extract_value_snapshot(e.payload),
+                "raw_message": e.message,
+                "interpretation": _short_interpretation(e.event_type),
             }
             for e in events
         ]
