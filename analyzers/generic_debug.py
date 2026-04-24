@@ -27,6 +27,68 @@ def _extract_source_groups(frame: pd.DataFrame) -> set[str]:
     return groups
 
 
+def detect_behavior_issues(timeline: pd.DataFrame) -> list[str]:
+    """Detect first-level generic inconsistencies in physical behavior."""
+    issues: list[str] = []
+    if timeline.empty:
+        return ["Indéterminé: aucune donnée exploitable."]
+
+    work = timeline.copy()
+    work["_ts"] = pd.to_datetime(work["timestamp"], utc=True, errors="coerce")
+    work = work.sort_values("_ts", na_position="last")
+
+    for col in ("Ptarget", "P", "AvailableDischargePower"):
+        if col not in work.columns:
+            work[col] = pd.NA
+        work[col] = pd.to_numeric(work[col], errors="coerce")
+
+    # Rule 1: setpoint changed but measured power does not follow.
+    setpoint_rows = work[work["event_type"] == "setpoint"].dropna(subset=["_ts", "Ptarget"])
+    for _, row in setpoint_rows.iterrows():
+        t0 = row["_ts"]
+        target = row["Ptarget"]
+        if pd.isna(target):
+            continue
+        window = work[(work["_ts"] >= t0) & (work["_ts"] <= t0 + pd.Timedelta(seconds=60))]
+        measured = window["P"].dropna()
+        if measured.empty:
+            continue
+        if abs(measured.iloc[-1] - target) > max(2.0, 0.3 * max(abs(target), 1.0)):
+            issues.append(
+                "Consigne envoyée mais P mesuré ne suit pas (possible problème véhicule ou exécution consigne)."
+            )
+            break
+
+    # Rule 2: internal limitation clues (borne side tendency).
+    if (work["event_type"] == "power_limit").any():
+        issues.append("Limitation de puissance détectée dans les logs (tendance borne).")
+    else:
+        candidate = work.dropna(subset=["AvailableDischargePower", "Ptarget"])
+        if not candidate.empty and ((candidate["AvailableDischargePower"] + 1e-6) < candidate["Ptarget"].abs()).any():
+            issues.append("AvailableDischargePower inférieur à la consigne (limitation interne probable).")
+
+    # Rule 3: incoherent behavior.
+    if "state" in work.columns:
+        charging_rows = work[work["state"] == "charging"]
+        if not charging_rows.empty and "P" in charging_rows.columns:
+            low_power_ratio = (charging_rows["P"].abs() < 0.5).mean()
+            if low_power_ratio > 0.7:
+                issues.append("État 'charging' avec puissance quasi nulle: comportement incohérent.")
+
+    # Rule 4: missing key data.
+    missing_core = []
+    for col in ("Ptarget", "P", "U"):
+        if col not in work.columns or work[col].dropna().empty:
+            missing_core.append(col)
+    if missing_core:
+        issues.append(f"Données manquantes ({', '.join(missing_core)}): diagnostic indéterminé.")
+
+    if not issues:
+        issues.append("Aucune anomalie majeure détectée par les règles génériques actuelles.")
+
+    return issues
+
+
 def summarize_session(timeline: pd.DataFrame) -> list[str]:
     """Return an improved generic V2G debug summary from a reconstructed timeline."""
     if timeline.empty:
@@ -49,7 +111,7 @@ def summarize_session(timeline: pd.DataFrame) -> list[str]:
     lines.append(f"Erreurs détectées: {_top_messages(timeline, 'error')}")
     lines.append(f"Warnings détectés: {_top_messages(timeline, 'warning')}")
     lines.append(f"Événements GridCodes: {_top_messages(timeline, 'gridcodes')}")
-    lines.append(f"Changements de setpoint: {_top_messages(timeline, 'setpoint_change')}")
+    lines.append(f"Changements de setpoint: {_top_messages(timeline, 'setpoint')}")
     lines.append(f"Limitations détectées: {_top_messages(timeline, 'power_limit')}")
 
     activity_counts = timeline["event_type"].value_counts()
@@ -61,7 +123,9 @@ def summarize_session(timeline: pd.DataFrame) -> list[str]:
     lines.append(f"Sources disponibles: {', '.join(sorted(available_sources)) if available_sources else 'aucune'}")
     lines.append(f"Sources manquantes: {', '.join(missing_sources) if missing_sources else 'aucune'}")
 
-    # Future diagnostic hook (borne vs véhicule) intentionally generic for now.
-    lines.append("Préparation diagnostic futur: événements taggés avec future_diagnostic_side=to_be_inferred")
+    lines.append("Analyse comportementale:")
+    for issue in detect_behavior_issues(timeline):
+        lines.append(f"- {issue}")
 
+    lines.append("Préparation diagnostic futur: événements taggés avec future_diagnostic_side=to_be_inferred")
     return lines

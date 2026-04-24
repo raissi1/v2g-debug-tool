@@ -17,16 +17,30 @@ from parsers.energy_manager import parse_energy_manager
 from parsers.meter_dispatcher import parse_meter_dispatcher
 
 ISO_TS_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?")
+NUMBER = r"([-+]?\d+(?:[\.,]\d+)?)"
 
 GENERIC_PATTERNS: list[tuple[str, tuple[str, ...]]] = [
     ("error", (" error ", "exception", "failed", "fatal")),
     ("warning", (" warning ", "warn", "retry", "degraded")),
     ("timeout", ("timeout", "timed out", "no response")),
     ("gridcodes", ("gridcode", "grid code", "lvrt", "hvrt", "frt")),
-    ("setpoint_change", ("setpoint", "set-point", "set point", "p_set", "q_set", "target power")),
     ("power_limit", ("power limit", "curtail", "derating", "limited", "max power")),
     ("protocol_event", ("iso15118", "ocpp", "din70121", "slac", "handshake", "session setup")),
     ("session_event", ("session start", "session stop", "charging started", "charging stopped", "plug", "unplug")),
+]
+
+GENERIC_PHYSICAL_PATTERNS = {
+    "Ptarget": [re.compile(rf"(?:ptarget|p_target|setpoint\s*p|target\s*power)\D{{0,12}}{NUMBER}", re.IGNORECASE)],
+    "Qtarget": [re.compile(rf"(?:qtarget|q_target|setpoint\s*q|target\s*reactive)\D{{0,12}}{NUMBER}", re.IGNORECASE)],
+    "P": [re.compile(rf"(?:p\s*meas(?:ured)?|measured\s*power|active\s*power)\D{{0,12}}{NUMBER}", re.IGNORECASE)],
+    "Q": [re.compile(rf"(?:q\s*meas(?:ured)?|reactive\s*power)\D{{0,12}}{NUMBER}", re.IGNORECASE)],
+    "U": [re.compile(rf"(?:voltage|tension|\bu\b)\D{{0,12}}{NUMBER}", re.IGNORECASE)],
+    "AvailableDischargePower": [re.compile(rf"(?:availabledischargepower|available\s*discharge\s*power)\D{{0,12}}{NUMBER}", re.IGNORECASE)],
+}
+GENERIC_STATE_PATTERNS = [
+    ("start", re.compile(r"session\s*start|start\s*session|charging\s*started", re.IGNORECASE)),
+    ("stop", re.compile(r"session\s*stop|stop\s*session|charging\s*stopped", re.IGNORECASE)),
+    ("charging", re.compile(r"\bcharging\b", re.IGNORECASE)),
 ]
 
 SESSION_MARKERS = (
@@ -44,12 +58,50 @@ FOCUS_EVENT_TYPES = {
     "error",
     "warning",
     "gridcodes",
-    "setpoint_change",
+    "setpoint",
     "power_limit",
     "timeout",
     "protocol_event",
     "session_event",
+    "physical_measurement",
+    "state_change",
 }
+
+
+def _to_float(raw: str) -> float | None:
+    try:
+        return float(raw.replace(",", "."))
+    except ValueError:
+        return None
+
+
+def _extract_generic_signals(line: str) -> dict[str, float | str]:
+    signals: dict[str, float | str] = {}
+    for key, patterns in GENERIC_PHYSICAL_PATTERNS.items():
+        for pattern in patterns:
+            m = pattern.search(line)
+            if m:
+                value = _to_float(m.group(1))
+                if value is not None:
+                    signals[key] = value
+                    break
+
+    for state_name, pattern in GENERIC_STATE_PATTERNS:
+        if pattern.search(line):
+            signals["state"] = state_name
+            break
+
+    return signals
+
+
+def _physical_event_type(signals: dict[str, float | str]) -> str | None:
+    if "state" in signals:
+        return "state_change"
+    if "Ptarget" in signals or "Qtarget" in signals:
+        return "setpoint"
+    if any(k in signals for k in ("P", "Q", "U", "AvailableDischargePower")):
+        return "physical_measurement"
+    return None
 
 
 def _parse_timestamp(raw: str) -> datetime | None:
@@ -90,18 +142,27 @@ def _events_from_log(path: Path, source_group: str = "generic") -> Iterable[Even
             stripped = line.strip()
             if not stripped:
                 continue
+
+            signals = _extract_generic_signals(stripped)
+            base_event_type = _classify_generic_line(stripped)
+            event_type = _physical_event_type(signals) or base_event_type
+
+            payload = {
+                "line": idx,
+                "path": str(path),
+                "parser": source_group if source_group != "generic" else "generic",
+                "source_group": source_group,
+                "future_diagnostic_side": "to_be_inferred",
+                "base_event_type": base_event_type,
+            }
+            payload.update(signals)
+
             yield Event(
                 timestamp=_extract_ts_from_text(stripped),
                 source=path.name,
-                event_type=_classify_generic_line(stripped),
+                event_type=event_type,
                 message=stripped,
-                payload={
-                    "line": idx,
-                    "path": str(path),
-                    "parser": source_group if source_group != "generic" else "generic",
-                    "source_group": source_group,
-                    "future_diagnostic_side": "to_be_inferred",
-                },
+                payload=payload,
             )
 
 
@@ -122,7 +183,7 @@ def _events_from_measure(path: Path) -> Iterable[Event]:
             yield Event(
                 timestamp=ts,
                 source=path.name,
-                event_type="measure_row",
+                event_type="physical_measurement",
                 message=f"Measurement row #{idx}",
                 payload=payload,
             )
@@ -141,7 +202,7 @@ def _events_from_measure(path: Path) -> Iterable[Event]:
             yield Event(
                 timestamp=ts,
                 source=path.name,
-                event_type="measure_row",
+                event_type="physical_measurement",
                 message=f"Measurement record #{idx}",
                 payload=rec,
             )
@@ -187,7 +248,6 @@ def _select_useful_session_window(frame: pd.DataFrame) -> pd.DataFrame:
     if valid.empty:
         return frame
 
-    # Segment by inactivity gap: each segment is a session candidate.
     gap = valid["_ts"].diff().gt(pd.Timedelta(minutes=30)).fillna(False)
     valid["_cluster"] = gap.cumsum()
 
@@ -202,13 +262,43 @@ def _select_useful_session_window(frame: pd.DataFrame) -> pd.DataFrame:
     best_cluster = sorted(cluster_scores, key=lambda x: (x[1], x[2]), reverse=True)[0][0]
     focused = valid[valid["_cluster"] == best_cluster].drop(columns=["_cluster"])
 
-    # Keep non-timestamp events for sources present in focused session window.
     source_set = set(focused["source"].tolist())
     no_ts_same_sources = work[work["_ts"].isna() & work["source"].isin(source_set)]
 
     result = pd.concat([focused, no_ts_same_sources], ignore_index=True)
     result = result.sort_values(by=["_ts", "source", "event_type"], na_position="last").drop(columns=["_ts"])
     return result.reset_index(drop=True)
+
+
+def _extract_payload_value(payload: object, key: str) -> float | str | None:
+    if isinstance(payload, dict):
+        return payload.get(key)
+    return None
+
+
+def _add_physical_columns(frame: pd.DataFrame) -> pd.DataFrame:
+    frame = frame.copy()
+    frame["Ptarget"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "Ptarget"))
+    frame["Qtarget"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "Qtarget"))
+    frame["P"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "P"))
+    frame["Q"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "Q"))
+    frame["U"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "U"))
+    frame["AvailableDischargePower"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "AvailableDischargePower"))
+    frame["state"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "state"))
+
+    for col in ("Ptarget", "Qtarget", "P", "Q", "U", "AvailableDischargePower"):
+        frame[col] = pd.to_numeric(frame[col], errors="coerce")
+
+    # Reconstruct behavior timeline by timestamp proximity: propagate nearby values.
+    frame["_ts"] = pd.to_datetime(frame["timestamp"], utc=True, errors="coerce")
+    frame = frame.sort_values(by=["_ts", "source", "event_type"], na_position="last")
+    for col in ("Ptarget", "Qtarget", "P", "Q", "U", "AvailableDischargePower", "state"):
+        frame[col] = frame[col].ffill()
+
+    # Build a coarse merged index for close timestamps (1-second bins).
+    frame["merged_ts"] = frame["_ts"].dt.floor("s")
+    frame = frame.drop(columns=["_ts"])
+    return frame
 
 
 def build_session_timeline(detected: DetectedFiles) -> pd.DataFrame:
@@ -244,4 +334,5 @@ def build_session_timeline(detected: DetectedFiles) -> pd.DataFrame:
     frame = frame.sort_values(by=["_sort_ts", "source", "event_type"], na_position="last").drop(columns=["_sort_ts"])
     frame = frame.reset_index(drop=True)
 
-    return _select_useful_session_window(frame)
+    focused = _select_useful_session_window(frame)
+    return _add_physical_columns(focused)
