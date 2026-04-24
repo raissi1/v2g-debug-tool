@@ -36,7 +36,12 @@ GENERIC_PHYSICAL_PATTERNS = {
     "P": [re.compile(rf"(?:p\s*meas(?:ured)?|measured\s*power|active\s*power)\D{{0,12}}{NUMBER}", re.IGNORECASE)],
     "Q": [re.compile(rf"(?:q\s*meas(?:ured)?|reactive\s*power)\D{{0,12}}{NUMBER}", re.IGNORECASE)],
     "U": [re.compile(rf"(?:voltage|tension|\bu\b)\D{{0,12}}{NUMBER}", re.IGNORECASE)],
+    "frequency": [re.compile(rf"(?:freq(?:uency)?|\bhz\b)\D{{0,12}}{NUMBER}", re.IGNORECASE)],
     "AvailableDischargePower": [re.compile(rf"(?:availabledischargepower|available\s*discharge\s*power)\D{{0,12}}{NUMBER}", re.IGNORECASE)],
+    "Pcalc": [re.compile(rf"(?:recalculated\s*setpoint\s*p|calculated\s*p|pcalc)\D{{0,12}}{NUMBER}", re.IGNORECASE)],
+    "Qcalc": [re.compile(rf"(?:recalculated\s*setpoint\s*q|calculated\s*q|qcalc)\D{{0,12}}{NUMBER}", re.IGNORECASE)],
+    "Smax": [re.compile(rf"(?:smax|max\s*apparent\s*power)\D{{0,12}}{NUMBER}", re.IGNORECASE)],
+    "derating": [re.compile(rf"(?:derating|derate|limit\s*factor)\D{{0,12}}{NUMBER}", re.IGNORECASE)],
 }
 GENERIC_STATE_PATTERNS = [
     ("start", re.compile(r"session\s*start|start\s*session|charging\s*started", re.IGNORECASE)),
@@ -100,6 +105,8 @@ def _physical_event_type(signals: dict[str, float | str]) -> str | None:
         return "state_change"
     if "Ptarget" in signals or "Qtarget" in signals:
         return "setpoint"
+    if any(k in signals for k in ("Pcalc", "Qcalc", "Smax", "derating")):
+        return "power_limit"
     if any(k in signals for k in ("P", "Q", "U", "AvailableDischargePower")):
         return "physical_measurement"
     return None
@@ -274,16 +281,21 @@ def _add_physical_columns(frame: pd.DataFrame) -> pd.DataFrame:
     frame["P"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "P"))
     frame["Q"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "Q"))
     frame["U"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "U"))
+    frame["frequency"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "frequency"))
     frame["AvailableDischargePower"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "AvailableDischargePower"))
+    frame["Pcalc"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "Pcalc"))
+    frame["Qcalc"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "Qcalc"))
+    frame["Smax"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "Smax"))
+    frame["derating"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "derating"))
     frame["state"] = frame["payload"].apply(lambda p: _extract_payload_value(p, "state"))
 
-    for col in ("Ptarget", "Qtarget", "P", "Q", "U", "AvailableDischargePower"):
+    for col in ("Ptarget", "Qtarget", "P", "Q", "U", "frequency", "AvailableDischargePower", "Pcalc", "Qcalc", "Smax", "derating"):
         frame[col] = pd.to_numeric(frame[col], errors="coerce")
 
     # Reconstruct behavior timeline by timestamp proximity: propagate nearby values.
     frame["_ts"] = pd.to_datetime(frame["timestamp"], utc=True, errors="coerce")
     frame = frame.sort_values(by=["_ts", "source", "event_type"], na_position="last")
-    for col in ("Ptarget", "Qtarget", "P", "Q", "U", "AvailableDischargePower", "state"):
+    for col in ("Ptarget", "Qtarget", "P", "Q", "U", "frequency", "AvailableDischargePower", "Pcalc", "Qcalc", "Smax", "derating", "state"):
         frame[col] = frame[col].ffill()
 
     # Build a coarse merged index for close timestamps (1-second bins).
@@ -295,7 +307,7 @@ def _add_physical_columns(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def _extract_value_snapshot(payload: dict) -> dict:
-    keys = ["Ptarget", "Qtarget", "P", "Q", "U", "frequency", "state", "AvailableDischargePower"]
+    keys = ["Ptarget", "Qtarget", "P", "Q", "U", "frequency", "Pcalc", "Qcalc", "Smax", "derating", "state", "AvailableDischargePower"]
     return {k: payload.get(k) for k in keys if k in payload and payload.get(k) is not None}
 
 
