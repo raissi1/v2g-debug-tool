@@ -20,6 +20,7 @@ EVENT_PATTERNS: list[tuple[str, tuple[str, ...]]] = [
     ("power_limit", ("power limit", "clamp", "limited", "cap", "max power")),
     ("gridcodes", ("gridcode", "grid code", "frequency event", "voltage event")),
     ("protocol_event", ("modbus", "mqtt", "publish", "packet", "frame")),
+    ("session_event", ("session start", "session stop", "sampling started", "sampling stopped")),
 ]
 
 
@@ -59,5 +60,11 @@ def parse_meter_dispatcher(path: Path) -> Iterable[Event]:
                 source=path.name,
                 event_type=_classify_event(text),
                 message=text,
-                payload={"line": idx, "path": str(path), "parser": "meter_dispatcher"},
+                payload={
+                    "line": idx,
+                    "path": str(path),
+                    "parser": "meter_dispatcher",
+                    "source_group": "meter_dispatcher",
+                    "future_diagnostic_side": "to_be_inferred",
+                },
             )

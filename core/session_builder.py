@@ -26,9 +26,30 @@ GENERIC_PATTERNS: list[tuple[str, tuple[str, ...]]] = [
     ("setpoint_change", ("setpoint", "set-point", "set point", "p_set", "q_set", "target power")),
     ("power_limit", ("power limit", "curtail", "derating", "limited", "max power")),
     ("protocol_event", ("iso15118", "ocpp", "din70121", "slac", "handshake", "session setup")),
+    ("session_event", ("session start", "session stop", "charging started", "charging stopped", "plug", "unplug")),
 ]
 
-SESSION_MARKERS = ("session", "charging", "plug", "unplug", "authorize", "start", "stop", "transaction")
+SESSION_MARKERS = (
+    "session",
+    "charging",
+    "plug",
+    "unplug",
+    "authorize",
+    "transaction",
+    "handshake",
+    "energy transfer",
+)
+
+FOCUS_EVENT_TYPES = {
+    "error",
+    "warning",
+    "gridcodes",
+    "setpoint_change",
+    "power_limit",
+    "timeout",
+    "protocol_event",
+    "session_event",
+}
 
 
 def _parse_timestamp(raw: str) -> datetime | None:
@@ -63,7 +84,7 @@ def _open_text(path: Path):
     return path.open("r", encoding="utf-8", errors="ignore")
 
 
-def _events_from_log(path: Path) -> Iterable[Event]:
+def _events_from_log(path: Path, source_group: str = "generic") -> Iterable[Event]:
     with _open_text(path) as stream:
         for idx, line in enumerate(stream, 1):
             stripped = line.strip()
@@ -74,7 +95,13 @@ def _events_from_log(path: Path) -> Iterable[Event]:
                 source=path.name,
                 event_type=_classify_generic_line(stripped),
                 message=stripped,
-                payload={"line": idx, "path": str(path), "parser": "generic"},
+                payload={
+                    "line": idx,
+                    "path": str(path),
+                    "parser": source_group if source_group != "generic" else "generic",
+                    "source_group": source_group,
+                    "future_diagnostic_side": "to_be_inferred",
+                },
             )
 
 
@@ -91,6 +118,7 @@ def _events_from_measure(path: Path) -> Iterable[Event]:
         for idx, row in frame.iterrows():
             ts = _parse_timestamp(str(row[ts_column])) if ts_column else None
             payload = row.to_dict()
+            payload.update({"source_group": "measure", "future_diagnostic_side": "to_be_inferred"})
             yield Event(
                 timestamp=ts,
                 source=path.name,
@@ -109,6 +137,7 @@ def _events_from_measure(path: Path) -> Iterable[Event]:
                 rec = {"value": rec}
             ts_key = next((k for k in rec.keys() if "time" in k.lower() or "date" in k.lower()), None)
             ts = _parse_timestamp(str(rec[ts_key])) if ts_key else None
+            rec.update({"source_group": "measure", "future_diagnostic_side": "to_be_inferred"})
             yield Event(
                 timestamp=ts,
                 source=path.name,
@@ -125,7 +154,13 @@ def _events_from_pcap(path: Path) -> Iterable[Event]:
         source=path.name,
         event_type="protocol_event",
         message="PCAP detected (binary payload not parsed in generic mode)",
-        payload={"size_bytes": stat.st_size, "path": str(path)},
+        payload={
+            "size_bytes": stat.st_size,
+            "path": str(path),
+            "parser": "netlogger",
+            "source_group": "netlogger",
+            "future_diagnostic_side": "to_be_inferred",
+        },
     )
 
 
@@ -137,6 +172,8 @@ def _iter_events_for_log(path: Path) -> Iterable[Event]:
         return parse_charger_app(path)
     if "iotc-meter-dispatcher" in lower_path or "meter_dispatcher" in lower_path:
         return parse_meter_dispatcher(path)
+    if "netlogger" in lower_path:
+        return _events_from_log(path, source_group="netlogger")
     return _events_from_log(path)
 
 
@@ -150,20 +187,22 @@ def _select_useful_session_window(frame: pd.DataFrame) -> pd.DataFrame:
     if valid.empty:
         return frame
 
+    # Segment by inactivity gap: each segment is a session candidate.
     gap = valid["_ts"].diff().gt(pd.Timedelta(minutes=30)).fillna(False)
     valid["_cluster"] = gap.cumsum()
 
     cluster_scores: list[tuple[int, int, pd.Timestamp]] = []
+    marker_regex = "|".join(SESSION_MARKERS)
     for cluster_id, chunk in valid.groupby("_cluster"):
-        useful = chunk["event_type"].isin({"error", "warning", "gridcodes", "setpoint_change", "power_limit", "timeout", "protocol_event"}).sum()
-        marker_bonus = chunk["message"].str.lower().str.contains("|".join(SESSION_MARKERS), regex=True).sum()
-        score = len(chunk) + 3 * useful + 2 * marker_bonus
+        useful = chunk["event_type"].isin(FOCUS_EVENT_TYPES).sum()
+        marker_bonus = chunk["message"].str.lower().str.contains(marker_regex, regex=True).sum()
+        score = len(chunk) + 4 * useful + 2 * marker_bonus
         cluster_scores.append((int(cluster_id), int(score), chunk["_ts"].max()))
 
     best_cluster = sorted(cluster_scores, key=lambda x: (x[1], x[2]), reverse=True)[0][0]
     focused = valid[valid["_cluster"] == best_cluster].drop(columns=["_cluster"])
 
-    # Keep only focused cluster (useful session) + non-timestamp events from same sources.
+    # Keep non-timestamp events for sources present in focused session window.
     source_set = set(focused["source"].tolist())
     no_ts_same_sources = work[work["_ts"].isna() & work["source"].isin(source_set)]
 
@@ -177,9 +216,6 @@ def build_session_timeline(detected: DetectedFiles) -> pd.DataFrame:
     events: list[Event] = []
 
     for log in detected.all_text_logs():
-        # Config files are intentionally excluded from event parsing.
-        if log.suffix.lower() == ".properties" or log.name.lower().endswith(".properties"):
-            continue
         events.extend(_iter_events_for_log(log))
 
     for measure in detected.measures:

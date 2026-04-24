@@ -16,7 +16,8 @@ EVENT_PATTERNS: list[tuple[str, tuple[str, ...]]] = [
     ("error", (" error ", "exception", "failed", "fatal", "cannot")),
     ("warning", (" warning ", "warn", "retry", "unstable")),
     ("timeout", ("timeout", "timed out", "no response", "waiting too long")),
-    ("protocol_event", ("iso15118", "ocpp", "din70121", "slac", "sdp", "handshake", "session")),
+    ("session_event", ("session start", "session stop", "charging started", "charging stopped", "ev connected", "ev disconnected")),
+    ("protocol_event", ("iso15118", "ocpp", "din70121", "slac", "sdp", "handshake")),
     ("gridcodes", ("gridcode", "grid code", "lvrt", "hvrt", "frt")),
     ("setpoint_change", ("setpoint", "set-point", "target current", "target power", "p_set", "q_set")),
     ("power_limit", ("power limit", "max current", "max power", "curtail", "limited")),
@@ -59,5 +60,11 @@ def parse_charger_app(path: Path) -> Iterable[Event]:
                 source=path.name,
                 event_type=_classify_event(text),
                 message=text,
-                payload={"line": idx, "path": str(path), "parser": "charger_app"},
+                payload={
+                    "line": idx,
+                    "path": str(path),
+                    "parser": "charger_app",
+                    "source_group": "charger_app",
+                    "future_diagnostic_side": "to_be_inferred",
+                },
             )

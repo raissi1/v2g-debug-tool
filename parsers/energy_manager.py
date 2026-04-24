@@ -20,6 +20,7 @@ EVENT_PATTERNS: list[tuple[str, tuple[str, ...]]] = [
     ("setpoint_change", ("setpoint", "set-point", "set point", "p_set", "q_set", "target power")),
     ("power_limit", ("power limit", "curtail", "derating", "max power", "limit=")),
     ("protocol_event", ("iso15118", "din70121", "ocpp", "slac", "session setup", "authorization")),
+    ("session_event", ("session start", "session stop", "charging started", "charging stopped", "plug in", "unplug")),
 ]
 
 
@@ -59,5 +60,11 @@ def parse_energy_manager(path: Path) -> Iterable[Event]:
                 source=path.name,
                 event_type=_classify_event(text),
                 message=text,
-                payload={"line": idx, "path": str(path), "parser": "energy_manager"},
+                payload={
+                    "line": idx,
+                    "path": str(path),
+                    "parser": "energy_manager",
+                    "source_group": "energy_manager",
+                    "future_diagnostic_side": "to_be_inferred",
+                },
             )
