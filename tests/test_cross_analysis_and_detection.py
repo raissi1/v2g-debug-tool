@@ -50,3 +50,31 @@ def test_compare_sources_builds_cross_insights() -> None:
     assert cross["rows"]
     assert any("véhicule" in msg.lower() or "pcap" in msg.lower() for msg in cross["insights"])
 
+
+def test_compare_sources_survives_noise_only_timeline() -> None:
+    frame = pd.DataFrame(
+        [
+            {
+                "timestamp": "2026-01-01T00:00:00Z",
+                "source": "EnergyManager.log",
+                "event_type": "info",
+                "message": "keep alive",
+                "payload": {"source_group": "energy_manager"},
+            },
+            {
+                "timestamp": "2026-01-01T00:00:01Z",
+                "source": "meter.log",
+                "event_type": "info",
+                "message": "queue created",
+                "payload": {"source_group": "meter_dispatcher"},
+            },
+        ]
+    )
+
+    cross = compare_sources(frame)
+
+    assert cross["rows"] == []
+    assert isinstance(cross["insights"], list)
+    assert cross["scores"] == {"borne": 0.0, "véhicule": 0.0, "communication": 0.0}
+    assert cross["evidence_table"] == []
+
