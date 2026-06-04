@@ -26,7 +26,21 @@ def _build_simplified_timeline(session_df: pd.DataFrame) -> pd.DataFrame:
     df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True, errors="coerce")
     df = df.dropna(subset=["timestamp"]).sort_values("timestamp")
 
-    for column in ["Ptarget", "Qtarget", "P", "Q", "S", "U", "U_avg", "frequency", "frequency_Hz", "Pcalc", "Qcalc", "Smax", "derating"]:
+    for column in [
+        "Ptarget",
+        "Qtarget",
+        "P",
+        "Q",
+        "S",
+        "U",
+        "U_avg",
+        "frequency",
+        "frequency_Hz",
+        "Pcalc",
+        "Qcalc",
+        "Smax",
+        "derating",
+    ]:
         if column not in df.columns:
             df[column] = pd.NA
         df[column] = pd.to_numeric(df[column], errors="coerce")
@@ -74,6 +88,31 @@ def _fmt_val(value: object) -> str:
 
 def _label_cause(value: str) -> str:
     return CAUSE_LABELS.get(str(value).lower(), str(value))
+
+
+def _dewesoft_status(simplified: pd.DataFrame) -> dict[str, bool]:
+    if simplified.empty or "payload" not in simplified.columns:
+        return {
+            "csv_available": False,
+            "raw_detected": False,
+            "any_detected": False,
+        }
+
+    payloads = simplified["payload"]
+    csv_available = payloads.apply(
+        lambda payload: isinstance(payload, dict)
+        and str(payload.get("source_group", "")).lower().find("measure") >= 0
+        and not payload.get("conversion_required", False)
+        and any(payload.get(key) is not None for key in ("P", "Q", "U", "frequency", "I_A"))
+    ).any()
+    raw_detected = payloads.apply(
+        lambda payload: isinstance(payload, dict) and bool(payload.get("conversion_required"))
+    ).any()
+    return {
+        "csv_available": bool(csv_available),
+        "raw_detected": bool(raw_detected),
+        "any_detected": bool(csv_available or raw_detected),
+    }
 
 
 def _build_reasoning_blocks(simplified: pd.DataFrame, issues: list[str]) -> dict[str, list[str]]:
@@ -154,8 +193,87 @@ def _build_reasoning_blocks(simplified: pd.DataFrame, issues: list[str]) -> dict
             f"f={_fmt_val(f_value)} Hz ({row.get('source')})"
         )
 
+    raw_dew_rows = work[
+        work["payload"].apply(
+            lambda payload: isinstance(payload, dict) and bool(payload.get("conversion_required"))
+        )
+    ].head(10)
+    for _, row in raw_dew_rows.iterrows():
+        blocks["D_measured"].append(
+            f"{row['source']} - acquisition Dewesoft brute detectee, conversion CSV requise pour exploiter les mesures"
+        )
+
     blocks["E_anomalies"].extend(issues)
     return blocks
+
+
+def _find_issue_origin(simplified: pd.DataFrame, cross: dict, cause: str) -> dict:
+    empty_origin = {
+        "timestamp": None,
+        "source": None,
+        "reason": "Point de depart du probleme non determine.",
+    }
+    if simplified.empty:
+        return empty_origin
+
+    work = simplified.copy()
+    work["source_group"] = work.apply(_source_group, axis=1)
+
+    if cause == "borne":
+        mask = (
+            (work["event_type"].isin(["power_limit", "gridcodes", "error"]))
+            | work["message"].astype(str).str.contains("recalculated|published|maxpower|derating|limit applied|crash|fatal", case=False, na=False)
+        )
+        rows = work[mask]
+        if not rows.empty:
+            row = rows.iloc[0]
+            return {
+                "timestamp": row["timestamp"].isoformat() if pd.notna(row["timestamp"]) else None,
+                "source": row.get("source"),
+                "reason": f"Premier indice cote borne: {row.get('message', '')[:180]}",
+            }
+
+    if cause == "vehicule":
+        cross_rows = pd.DataFrame(cross.get("rows", []))
+        if not cross_rows.empty and "Ptarget" in cross_rows.columns:
+            dew_values = cross_rows["P_dewesoft"] if "P_dewesoft" in cross_rows.columns else pd.Series(pd.NA, index=cross_rows.index)
+            meter_values = cross_rows["P_meter"] if "P_meter" in cross_rows.columns else pd.Series(pd.NA, index=cross_rows.index)
+            measured = dew_values.where(dew_values.notna(), meter_values)
+            mismatch = (cross_rows["Ptarget"] - measured).abs() > 0.3 * cross_rows["Ptarget"].abs().clip(lower=1.0)
+            mismatch_rows = cross_rows[mismatch.fillna(False)]
+            if not mismatch_rows.empty:
+                row = mismatch_rows.iloc[0]
+                timestamp = row.get("timestamp")
+                return {
+                    "timestamp": str(timestamp) if timestamp is not None else None,
+                    "source": row.get("source"),
+                    "reason": "Premier ecart net entre consigne et puissance mesuree sans blocage borne explicite.",
+                }
+
+    if cause == "communication":
+        mask = (
+            (work["event_type"].isin(["timeout", "protocol_event", "warning"]))
+            & work["message"].astype(str).str.contains("timeout|handshake|protocol|no response|pcap", case=False, na=False)
+        )
+        rows = work[mask]
+        if not rows.empty:
+            row = rows.iloc[0]
+            return {
+                "timestamp": row["timestamp"].isoformat() if pd.notna(row["timestamp"]) else None,
+                "source": row.get("source"),
+                "reason": f"Premier indice protocolaire: {row.get('message', '')[:180]}",
+            }
+
+    generic_mask = work["event_type"].isin(["error", "warning", "timeout", "gridcodes", "power_limit"])
+    generic_rows = work[generic_mask]
+    if not generic_rows.empty:
+        row = generic_rows.iloc[0]
+        return {
+            "timestamp": row["timestamp"].isoformat() if pd.notna(row["timestamp"]) else None,
+            "source": row.get("source"),
+            "reason": f"Premier evenement suspect observe: {row.get('message', '')[:180]}",
+        }
+    return empty_origin
 
 
 def compare_sources(session_df: pd.DataFrame) -> dict:
@@ -163,14 +281,7 @@ def compare_sources(session_df: pd.DataFrame) -> dict:
 
 
 def run_diagnostic(session_df: pd.DataFrame) -> dict:
-    """Return probable cause, confidence, justification, evidence and missing data.
-
-    Rules:
-      - setpoint sent but not followed => vehicule
-      - internal limit / gridcodes => borne
-      - protocol errors/timeouts => communication
-      - insufficient data => indetermine
-    """
+    """Return probable cause, confidence, justification, evidence and missing data."""
     simplified = _build_simplified_timeline(session_df)
 
     result = {
@@ -179,6 +290,13 @@ def run_diagnostic(session_df: pd.DataFrame) -> dict:
         "justification": "Donnees insuffisantes pour trancher.",
         "evidence": [],
         "missing_data": [],
+        "best_lead": "indetermine",
+        "best_lead_reason": "Aucune piste dominante.",
+        "issue_origin": {
+            "timestamp": None,
+            "source": None,
+            "reason": "Point de depart du probleme non determine.",
+        },
     }
 
     if simplified.empty:
@@ -199,8 +317,9 @@ def run_diagnostic(session_df: pd.DataFrame) -> dict:
     cross = compare_sources(session_df)
     scores = cross.get("scores", {})
     evidence_table = cross.get("evidence_table", [])
-
     issues: list[str] = []
+
+    dew_status = _dewesoft_status(simplified)
 
     vehicle_signal = False
     setpoints = simplified[simplified[["Ptarget", "Qtarget"]].notna().any(axis=1)].dropna(subset=["Ptarget"])
@@ -242,24 +361,33 @@ def run_diagnostic(session_df: pd.DataFrame) -> dict:
         result["evidence"].append("Timeouts ou erreurs protocole/handshake observes.")
         issues.append("Timeout ou erreur protocolaire observe.")
 
-    dew_available = False
-    if "payload" in simplified.columns:
-        dew_available = simplified["payload"].apply(
-            lambda payload: isinstance(payload, dict) and "measure" in str(payload.get("source_group", "")).lower()
-        ).any()
-
     best_cause = max(scores, key=scores.get) if scores else "indetermine"
     best_score = scores.get(best_cause, 0.0)
     second = sorted(scores.values(), reverse=True)[1] if len(scores) > 1 else 0.0
 
-    if ("Ptarget" in missing) and (not dew_available):
+    result["best_lead"] = best_cause
+    lead_reason_map = {
+        "borne": "Les indices de recalcul, limitation ou GridCode sont les plus forts.",
+        "vehicule": "La consigne semble envoyee mais la reponse physique ne suit pas.",
+        "communication": "Les indices protocole ou timeout dominent la session.",
+        "indetermine": "Aucune piste dominante ne se detache clairement.",
+    }
+    result["best_lead_reason"] = lead_reason_map.get(best_cause, lead_reason_map["indetermine"])
+
+    if ("Ptarget" in missing) and (not dew_status["csv_available"]):
         result["cause_probable"] = "indetermine"
         result["confidence_score"] = 30
-        result["justification"] = "Consigne Ptarget non disponible et mesure Dewesoft absente."
+        if dew_status["raw_detected"]:
+            result["justification"] = (
+                "Consigne Ptarget non disponible et Dewesoft present uniquement en brut. "
+                "La conversion CSV est requise pour utiliser les mesures."
+            )
+        else:
+            result["justification"] = "Consigne Ptarget non disponible et mesure Dewesoft exploitable absente."
     elif best_score < 1.5 or abs(best_score - second) < 0.8:
         result["cause_probable"] = "indetermine"
         result["confidence_score"] = 35 if not missing else 30
-        result["justification"] = "Preuves insuffisantes ou contradictoires pour conclure."
+        result["justification"] = "Preuves encore trop faibles ou contradictoires pour conclure fermement."
     else:
         result["cause_probable"] = best_cause
         result["confidence_score"] = min(85, int(45 + best_score * 12))
@@ -277,10 +405,14 @@ def run_diagnostic(session_df: pd.DataFrame) -> dict:
         result["evidence"].append(f"Donnees manquantes: {', '.join(missing)}")
         issues.append(f"Donnees manquantes: {', '.join(missing)}")
 
-    if result["cause_probable"] == "vehicule" and not dew_available:
+    if dew_status["raw_detected"] and not dew_status["csv_available"]:
+        result["evidence"].append("Fichiers Dewesoft bruts detectes (.d7d/.dxd), mais non exploitables sans conversion CSV.")
+        issues.append("Dewesoft brut detecte: conversion CSV requise pour les mesures detaillees.")
+
+    if result["cause_probable"] == "vehicule" and not dew_status["csv_available"]:
         result["confidence_score"] = min(result["confidence_score"], 55)
-        result["justification"] += " Dewesoft non exploite: confiance abaissee pour une conclusion cote vehicule."
-        result["evidence"].append("Absence de Dewesoft exploitable: rester prudent pour une conclusion cote vehicule.")
+        result["justification"] += " Dewesoft CSV non exploite: confiance abaissee pour une conclusion cote vehicule."
+        result["evidence"].append("Absence de Dewesoft CSV exploitable: rester prudent pour une conclusion cote vehicule.")
 
     if not issues:
         issues.append("Aucune anomalie majeure detectee par les regles actuelles.")
@@ -288,8 +420,9 @@ def run_diagnostic(session_df: pd.DataFrame) -> dict:
     if vehicle_signal and result["cause_probable"] == "indetermine":
         result["evidence"].append("Ecart consigne/mesure observe, mais preuves encore trop faibles pour conclure.")
 
-    blocks = _build_reasoning_blocks(simplified, issues)
+    result["issue_origin"] = _find_issue_origin(simplified, cross, result["best_lead"])
 
+    blocks = _build_reasoning_blocks(simplified, issues)
     result["issues"] = issues
     result["blocks"] = blocks
     result["cross_analysis"] = cross
@@ -302,17 +435,33 @@ def run_diagnostic(session_df: pd.DataFrame) -> dict:
         if "P" not in missing and "U" not in missing
         else "Observations physiques partielles."
     )
+    if dew_status["csv_available"]:
+        dew_line = "Dewesoft CSV exploitable present."
+    elif dew_status["raw_detected"]:
+        dew_line = "Dewesoft brut detecte, conversion CSV requise."
+    else:
+        dew_line = "Aucune mesure Dewesoft exploitable."
+
     recommendation = (
-        "Extraire Ptarget depuis EnergyManager ou PCAP et importer Dewesoft pour renforcer le diagnostic."
-        if ("Ptarget" in missing or not dew_available)
+        "Extraire Ptarget depuis EnergyManager ou PCAP et convertir Dewesoft en CSV pour renforcer le diagnostic."
+        if ("Ptarget" in missing or not dew_status["csv_available"])
         else "Comparer finement les consignes et le protocole avec les mesures Dewesoft et le meter interne."
     )
+    issue_origin = result["issue_origin"]
+    origin_text = (
+        f"Debut probable du probleme: {issue_origin.get('timestamp')} ({issue_origin.get('source')}) - {issue_origin.get('reason')}"
+        if issue_origin.get("timestamp") or issue_origin.get("source")
+        else issue_origin.get("reason")
+    )
+
     result["executive_summary"] = (
         f"Cause probable: {_label_cause(result['cause_probable'])}. "
+        f"Piste principale meme si prudente: {_label_cause(result['best_lead'])}. "
         f"Confiance: {result['confidence']} ({result['confidence_score']}%). "
         f"Observation: {observation} "
         f"Preuves: {', '.join(cross.get('insights', [])[:3]) if cross.get('insights') else 'aucune forte'}. "
-        f"Donnees manquantes: {', '.join(missing) if missing else 'aucune'}. "
+        f"Dewesoft: {dew_line} "
+        f"{origin_text}. "
         f"Recommandation: {recommendation}"
     )
 

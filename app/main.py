@@ -25,6 +25,7 @@ from analyzers.generic_debug import summarize_session
 from core.session_builder import build_session_timeline
 from graphs.plot_builder import build_signal_figure
 from reports.html_report import generate_html_report
+from reports.pdf_report import generate_pdf_report
 from timeline.reconstructor import build_timeseries_view
 from utils.file_detector import detect_session_files
 from utils.zip_loader import extract_zip_to_temp
@@ -112,6 +113,21 @@ def _render_detected_files(st, detected_summary: dict) -> None:
     st.write(f"PCAP detectes: **{pcap_total}**")
     st.write(f"Mesures Dewesoft CSV: **{len(detected_summary.get('dewesoft_csv', []))}**")
     st.write(f"Mesures Dewesoft brutes (.d7d/.dxd): **{len(detected_summary.get('dewesoft_raw', []))}**")
+    if detected_summary.get("dewesoft_raw", []) and not detected_summary.get("dewesoft_csv", []):
+        st.warning("Dewesoft brut detecte: present dans la session, mais conversion CSV requise pour exploiter les mesures.")
+
+
+def _analysis_status_text(step: str) -> str:
+    labels = {
+        "resolve": "Preparation de la session...",
+        "detect": "Detection des fichiers sources...",
+        "timeline": "Reconstruction de la timeline...",
+        "timeseries": "Construction des signaux physiques...",
+        "summary": "Generation du resume automatique...",
+        "diagnostic": "Execution du diagnostic...",
+        "finalize": "Finalisation du rapport et du dashboard...",
+    }
+    return labels.get(step, "Analyse en cours...")
 
 
 def run_streamlit_app() -> None:
@@ -146,6 +162,9 @@ def run_streamlit_app() -> None:
             folder_path = st.text_input("Chemin dossier session", value="", placeholder="C:/.../session")
         else:
             uploaded_zip = st.file_uploader("Session ZIP", type=["zip"])
+            if uploaded_zip is not None:
+                size_mb = uploaded_zip.size / (1024 * 1024)
+                st.success(f"ZIP charge: {uploaded_zip.name} ({size_mb:.1f} MB)")
 
         st.caption("Le ZIP peut contenir les logs borne, les traces PCAP et les exports Dewesoft CSV.")
         analyze_clicked = st.button("Analyser la session", type="primary", use_container_width=True)
@@ -158,15 +177,29 @@ def run_streamlit_app() -> None:
 
     if analyze_clicked:
         temp_dir: tempfile.TemporaryDirectory[str] | None = None
+        progress_box = st.empty()
+        progress_bar = st.progress(0, text=_analysis_status_text("resolve"))
         try:
+            progress_bar.progress(10, text=_analysis_status_text("resolve"))
             session_dir, temp_dir = _resolve_input_source(input_mode, folder_path, uploaded_zip)
+
+            progress_bar.progress(25, text=_analysis_status_text("detect"))
             detected = detect_session_files(session_dir)
+
+            progress_bar.progress(45, text=_analysis_status_text("timeline"))
             session_df = build_session_timeline(detected)
+
+            progress_bar.progress(60, text=_analysis_status_text("timeseries"))
             timeseries = build_timeseries_view(session_df)
+
+            progress_bar.progress(72, text=_analysis_status_text("summary"))
             summary_lines = summarize_session(session_df)
+
+            progress_bar.progress(88, text=_analysis_status_text("diagnostic"))
             diagnostic = run_diagnostic(session_df)
             detected_summary = detected.to_summary()
 
+            progress_bar.progress(100, text=_analysis_status_text("finalize"))
             st.session_state.analysis = {
                 "session_df": session_df,
                 "timeseries": timeseries,
@@ -174,7 +207,14 @@ def run_streamlit_app() -> None:
                 "diagnostic": diagnostic,
                 "detected_summary": detected_summary,
             }
+            progress_box.success(
+                "Analyse terminee. "
+                f"Verdict: {_label_cause(diagnostic.get('cause_probable', 'indetermine'))} | "
+                f"confiance {diagnostic.get('confidence', 'Faible')} ({diagnostic.get('confidence_score', 0)}%)."
+            )
         except Exception as exc:  # noqa: BLE001
+            progress_bar.empty()
+            progress_box.error("Analyse interrompue. Voir le detail de l'erreur ci-dessous.")
             st.error(str(exc))
             st.exception(exc)
             st.session_state.analysis = None
@@ -194,6 +234,7 @@ def run_streamlit_app() -> None:
     detected_summary: dict = analysis["detected_summary"]
     metrics = _compute_overview_metrics(session_df, detected_summary)
     report_html = generate_html_report(summary_lines, diagnostic, session_df, detected_summary)
+    report_pdf = generate_pdf_report(summary_lines, diagnostic, session_df, detected_summary)
 
     tabs = st.tabs(["Verdict", "Sources", "Timeline", "Graphes", "Preuves", "Rapport"])
 
@@ -227,6 +268,16 @@ def run_streamlit_app() -> None:
         st.markdown("### Lecture metier")
         st.write(diagnostic.get("justification", "Aucune justification disponible."))
         st.write(diagnostic.get("executive_summary", ""))
+        st.markdown("### Point de depart probable")
+        issue_origin = diagnostic.get("issue_origin", {}) or {}
+        lead_label = _label_cause(diagnostic.get("best_lead", "indetermine"))
+        st.write(f"Piste a verifier d'abord: **{lead_label}**")
+        st.write(diagnostic.get("best_lead_reason", ""))
+        st.write(
+            f"Moment suspect: **{issue_origin.get('timestamp') or 'non determine'}** | "
+            f"Source: **{issue_origin.get('source') or 'non determinee'}**"
+        )
+        st.write(issue_origin.get("reason", "Point de depart du probleme non determine."))
 
         st.markdown("### Resume automatique")
         if session_df.empty:
@@ -336,7 +387,10 @@ def run_streamlit_app() -> None:
         if csv_count > 0:
             st.write(f"Mesures CSV disponibles: {csv_count}")
         elif raw_count > 0:
-            st.warning(f"{raw_count} fichier(s) Dewesoft .d7d/.dxd detecte(s): conversion Dewesoft requise.")
+            st.warning(
+                f"{raw_count} fichier(s) Dewesoft .d7d/.dxd detecte(s): presents dans la session, "
+                "mais conversion CSV requise pour analyse detaillee."
+            )
         else:
             st.info("Aucune acquisition Dewesoft detectee.")
 
@@ -348,6 +402,12 @@ def run_streamlit_app() -> None:
             data=report_html.encode("utf-8"),
             file_name="v2g_debug_report.html",
             mime="text/html",
+        )
+        st.download_button(
+            "Telecharger le rapport PDF",
+            data=report_pdf,
+            file_name="v2g_debug_report.pdf",
+            mime="application/pdf",
         )
         st.download_button(
             "Telecharger la timeline CSV",
