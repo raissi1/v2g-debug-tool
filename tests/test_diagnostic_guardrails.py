@@ -46,3 +46,22 @@ def test_structured_evidence_table_is_present() -> None:
     result = run_diagnostic(frame)
     assert "evidence_table" in result
     assert isinstance(result["evidence_table"], list)
+
+
+def test_raw_dewesoft_is_not_reported_as_absent() -> None:
+    frame = pd.DataFrame(
+        [
+            {
+                "timestamp": "2026-01-01T00:00:00Z",
+                "source": "session.dxd",
+                "event_type": "warning",
+                "message": "Dewesoft brut detecte, conversion requise (.dxd)",
+                "payload": {
+                    "source_group": "measure",
+                    "conversion_required": True,
+                },
+            }
+        ]
+    )
+    result = run_diagnostic(frame)
+    assert "brut" in result["justification"].lower() or any("brut" in item.lower() for item in result["evidence"])

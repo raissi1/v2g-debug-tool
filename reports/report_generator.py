@@ -113,7 +113,9 @@ def _build_recommendations(diagnostic: dict, detected_summary: dict | None) -> l
 
     if "Ptarget" in missing_data:
         recommendations.append("Extraire une trace plus explicite des consignes Ptarget depuis EnergyManager ou PCAP.")
-    if detected_summary and not detected_summary.get("dewesoft_csv", []):
+    if detected_summary and detected_summary.get("dewesoft_raw", []) and not detected_summary.get("dewesoft_csv", []):
+        recommendations.append("Convertir les fichiers Dewesoft bruts (.d7d/.dxd) en CSV pour exploiter les mesures detaillees.")
+    elif detected_summary and not detected_summary.get("dewesoft_csv", []):
         recommendations.append("Ajouter un export Dewesoft CSV pour renforcer le diagnostic physique.")
     if detected_summary and not (detected_summary.get("netlogger_pcaps", []) or detected_summary.get("generic_pcaps", [])):
         recommendations.append("Ajouter une capture PCAP exploitable pour mieux justifier la partie protocole.")
@@ -123,12 +125,16 @@ def _build_recommendations(diagnostic: dict, detected_summary: dict | None) -> l
 
 def _dewesoft_realtime_section(timeline: pd.DataFrame, detected_summary: dict | None) -> str:
     if timeline.empty or "payload" not in timeline.columns:
+        if detected_summary and detected_summary.get("dewesoft_raw", []):
+            return "<p class=\"empty\">Dewesoft brut detecte, mais aucune mesure exploitable sans conversion CSV.</p>"
         return "<p class=\"empty\">Aucune donnee Dewesoft exploitable.</p>"
 
     work = timeline.copy()
     src_group = work["payload"].apply(lambda payload: payload.get("source_group") if isinstance(payload, dict) else None)
     dew = work[src_group.astype(str).str.contains("measure", case=False, na=False)].copy()
     if dew.empty:
+        if detected_summary and detected_summary.get("dewesoft_raw", []):
+            return "<p class=\"empty\">Dewesoft brut detecte, mais aucune mesure exploitable sans conversion CSV.</p>"
         return "<p class=\"empty\">Aucune donnee Dewesoft exploitable.</p>"
 
     dew["timestamp"] = pd.to_datetime(dew["timestamp"], utc=True, errors="coerce")
@@ -179,6 +185,9 @@ def generate_html_report(
     confidence_score = int(diagnostic.get("confidence_score", 0))
     justification = str(diagnostic.get("justification", "Aucune justification disponible."))
     executive_summary = str(diagnostic.get("executive_summary", ""))
+    best_lead = _label_cause(diagnostic.get("best_lead", "indetermine"))
+    best_lead_reason = str(diagnostic.get("best_lead_reason", ""))
+    issue_origin = diagnostic.get("issue_origin", {}) or {}
 
     requested_lines = blocks.get("A_requested", [])
     station_lines = blocks.get("B_station_computed", [])
@@ -206,6 +215,7 @@ def generate_html_report(
     verdict_cards_html = "".join(
         [
             _metric_card("Verdict", cause_label, tone=tone),
+            _metric_card("Piste a verifier d'abord", best_lead, tone="info" if cause == "indetermine" else "neutral"),
             _metric_card("Confiance", f"{confidence} ({confidence_score}%)", tone="neutral"),
             _metric_card("Evenements exploites", str(len(timeline)), tone="neutral"),
             _metric_card("PCAP detectes", str(pcap_total), tone="info"),
@@ -574,6 +584,25 @@ def generate_html_report(
               <div class="summary-box">
                 <strong>Actions recommandees</strong>
                 <ul>{_to_list_html(recommendation_lines)}</ul>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <h2>Point de depart probable</h2>
+            <div class="two-col">
+              <div class="summary-box">
+                <strong>Moment et source a verifier</strong>
+                <p>
+                  {escape(str(issue_origin.get("timestamp") or "Horodatage non determine"))}<br>
+                  {escape(str(issue_origin.get("source") or "Source non determinee"))}
+                </p>
+              </div>
+              <div class="summary-box">
+                <strong>Interpretation</strong>
+                <p>{escape(str(issue_origin.get("reason") or "Point de depart du probleme non determine."))}</p>
+                <p><b>Piste principale:</b> {escape(best_lead)}</p>
+                <p>{escape(best_lead_reason)}</p>
               </div>
             </div>
           </section>
