@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import base64
 from datetime import datetime, timezone
 from html import escape
+from pathlib import Path
 
 import pandas as pd
 
@@ -58,7 +60,8 @@ def _build_file_summary(detected_summary: dict | None) -> list[str]:
         f"PCAP netlogger: {len(detected_summary.get('netlogger_pcaps', []))} fichier(s)",
         f"PCAP dossiers pcap/pcaps: {len(detected_summary.get('generic_pcaps', []))} fichier(s)",
         f"Mesures Dewesoft CSV: {len(detected_summary.get('dewesoft_csv', []))} fichier(s)",
-        f"Mesures Dewesoft brutes (.d7d/.dxd): {len(detected_summary.get('dewesoft_raw', []))} fichier(s)",
+        f"Mesures Dewesoft brutes (.d7d/.dxd/.dmd): {len(detected_summary.get('dewesoft_raw', []))} fichier(s)",
+        f"Captures et images de support: {len(detected_summary.get('supporting_images', []))} fichier(s)",
     ]
 
 
@@ -92,9 +95,48 @@ def _source_matrix_html(detected_summary: dict | None) -> str:
             "Role": "Mesures physiques de reference",
             "Count": len(detected_summary.get("dewesoft_csv", [])),
         },
+        {
+            "Source": "Captures / images",
+            "Role": "Support visuel pour rapport, protocoles et acquisitions",
+            "Count": len(detected_summary.get("supporting_images", [])),
+        },
     ]
     frame = pd.DataFrame(rows)
     return frame.to_html(index=False, escape=True, classes="report-table")
+
+
+def _image_gallery_html(detected_summary: dict | None, limit: int = 8) -> str:
+    if not detected_summary:
+        return "<p class=\"empty\">Aucune image de support detectee.</p>"
+
+    image_paths = detected_summary.get("supporting_images", [])[:limit]
+    cards: list[str] = []
+    for raw_path in image_paths:
+        try:
+            path = Path(raw_path)
+            mime = "image/png"
+            suffix = path.suffix.lower()
+            if suffix in {".jpg", ".jpeg"}:
+                mime = "image/jpeg"
+            elif suffix == ".bmp":
+                mime = "image/bmp"
+            elif suffix == ".gif":
+                mime = "image/gif"
+            elif suffix == ".webp":
+                mime = "image/webp"
+            encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+            cards.append(
+                "<div class=\"image-card\">"
+                f"<img src=\"data:{mime};base64,{encoded}\" alt=\"{escape(path.name)}\">"
+                f"<div class=\"image-caption\">{escape(path.name)}</div>"
+                "</div>"
+            )
+        except Exception:
+            continue
+
+    if not cards:
+        return "<p class=\"empty\">Aucune image de support exploitable.</p>"
+    return f"<div class=\"image-grid\">{''.join(cards)}</div>"
 
 
 def _build_recommendations(diagnostic: dict, detected_summary: dict | None) -> list[str]:
@@ -114,7 +156,7 @@ def _build_recommendations(diagnostic: dict, detected_summary: dict | None) -> l
     if "Ptarget" in missing_data:
         recommendations.append("Extraire une trace plus explicite des consignes Ptarget depuis EnergyManager ou PCAP.")
     if detected_summary and detected_summary.get("dewesoft_raw", []) and not detected_summary.get("dewesoft_csv", []):
-        recommendations.append("Convertir les fichiers Dewesoft bruts (.d7d/.dxd) en CSV pour exploiter les mesures detaillees.")
+        recommendations.append("Convertir les fichiers Dewesoft bruts (.d7d/.dxd/.dmd) en CSV pour exploiter les mesures detaillees.")
     elif detected_summary and not detected_summary.get("dewesoft_csv", []):
         recommendations.append("Ajouter un export Dewesoft CSV pour renforcer le diagnostic physique.")
     if detected_summary and not (detected_summary.get("netlogger_pcaps", []) or detected_summary.get("generic_pcaps", [])):
@@ -501,6 +543,30 @@ def generate_html_report(
             background: #eff8ff;
             color: #175cd3;
           }}
+          .image-grid {{
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 18px;
+          }}
+          .image-card {{
+            background: var(--surface-alt);
+            border: 1px solid var(--line);
+            border-radius: 18px;
+            padding: 12px;
+          }}
+          .image-card img {{
+            width: 100%;
+            max-height: 280px;
+            object-fit: contain;
+            border-radius: 12px;
+            background: white;
+          }}
+          .image-caption {{
+            margin-top: 8px;
+            font-size: 12px;
+            color: var(--muted);
+            word-break: break-word;
+          }}
           @media (max-width: 980px) {{
             body {{
               padding: 16px;
@@ -508,7 +574,8 @@ def generate_html_report(
             .stamp-row,
             .two-col,
             .three-col,
-            .metrics-grid {{
+            .metrics-grid,
+            .image-grid {{
               grid-template-columns: 1fr;
             }}
           }}
@@ -677,6 +744,12 @@ def generate_html_report(
           <section class="panel">
             <h2>Analyse Dewesoft</h2>
             {_dewesoft_realtime_section(timeline, detected_summary)}
+          </section>
+
+          <section class="panel">
+            <h2>Captures et illustrations</h2>
+            <p>Ces images proviennent du package de session et peuvent servir d'annexe visuelle au diagnostic.</p>
+            {_image_gallery_html(detected_summary)}
           </section>
 
           <section class="panel">

@@ -25,7 +25,8 @@ class DetectedFiles:
     generic_pcaps: list[Path] = field(default_factory=list)
 
     dewesoft_csv: list[Path] = field(default_factory=list)
-    dewesoft_raw: list[Path] = field(default_factory=list)  # .d7d/.dxd (conversion required)
+    dewesoft_raw: list[Path] = field(default_factory=list)  # .d7d/.dxd/.dmd (conversion required)
+    supporting_images: list[Path] = field(default_factory=list)
 
     ignored_files: list[Path] = field(default_factory=list)
 
@@ -69,6 +70,7 @@ class DetectedFiles:
             "pcaps": all_pcaps,
             "dewesoft_csv": [str(p) for p in self.dewesoft_csv],
             "dewesoft_raw": [str(p) for p in self.dewesoft_raw],
+            "supporting_images": [str(p) for p in self.supporting_images],
             "ignored_files": [str(p) for p in self.ignored_files],
         }
 

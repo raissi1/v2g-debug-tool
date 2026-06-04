@@ -9,6 +9,7 @@ from core.models import DetectedFiles
 
 ALLOWED_AUX_DIRS = {"ChargerApp", "EnergyManager", "iotc-meter-dispatcher", "netlogger"}
 CONFIG_EXTENSIONS = {".properties", ".conf", ".ini", ".yaml", ".yml", ".json", ".xml", ".cfg"}
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp"}
 
 LOG_PATTERN = re.compile(r".+\.log(?:\..+)?(?:\.gz)?$", re.IGNORECASE)
 NETLOGGER_LOG_PATTERN = re.compile(r"^netlogger\.log(?:\..+)?\.gz$", re.IGNORECASE)
@@ -44,28 +45,34 @@ def _looks_like_component_log_name(name: str) -> bool:
 
 def _is_pcap_file(name: str) -> bool:
     lower = name.lower()
-    return (
-        lower.endswith(".pcap")
-        or lower.endswith(".pcapng")
-        or lower.endswith(".pcap.gz")
-        or lower.endswith(".pcapng.gz")
-    )
+    return lower.endswith(".pcap") or lower.endswith(".pcapng") or lower.endswith(".pcap.gz") or lower.endswith(".pcapng.gz")
 
 
 def _is_dewesoft_csv(path: Path) -> bool:
     if path.suffix.lower() != ".csv":
         return False
     lower = str(path).lower()
-    return any(token in lower for token in ("dewesoft", "dewe", "acquisition", "measure", "measurement", "mesure", "daq"))
+    name = path.name.lower()
+    return (
+        any(token in lower for token in ("dewesoft", "dewe", "acquisition", "aquisition", "aquisitions", "measure", "measurement", "mesure", "daq"))
+        or name.startswith("primara_")
+    )
 
 
 def _is_dewesoft_binary(path: Path) -> bool:
-    return path.suffix.lower() in {".d7d", ".dxd"}
+    return path.suffix.lower() in {".d7d", ".dxd", ".dmd"}
+
+
+def _is_supporting_image(path: Path) -> bool:
+    if path.suffix.lower() not in IMAGE_EXTENSIONS:
+        return False
+    lower = str(path).lower()
+    return any(token in lower for token in ("screenshot", "pcap", "img", "aquisition", "aquisitions", "acquisition", "dewesoft", "primara"))
 
 
 def _detect_full_test_structure(path: Path) -> str | None:
     lower_parts = {part.lower() for part in path.parts}
-    if any(name in lower_parts for name in ("acquisitions", "acquisition", "dewesoft", "measures", "mesures")):
+    if any(name in lower_parts for name in ("acquisitions", "aquisitions", "acquisition", "aquisition", "dewesoft", "measures", "mesures")):
         return "acquisitions"
     if "log" in lower_parts:
         return "log"
@@ -99,27 +106,25 @@ def detect_session_files(root: Path) -> DetectedFiles:
         if not path.is_file():
             continue
 
-        # Dewesoft acquisitions are accepted globally.
         if _is_dewesoft_binary(path):
             detected.dewesoft_raw.append(path)
             continue
         if _is_dewesoft_csv(path):
             detected.dewesoft_csv.append(path)
             continue
+        if _is_supporting_image(path):
+            detected.supporting_images.append(path)
+            continue
 
-        # Direct IoT.ON capture handling: detect /var/aux/netlogger regardless of which aux root was discovered.
         if _contains_path_sequence(path, ("var", "aux", "netlogger")):
             if _is_pcap_file(path.name):
                 detected.netlogger_pcaps.append(path)
             elif path.name.lower() == "netlogger.log" or NETLOGGER_LOG_PATTERN.fullmatch(path.name.lower()):
                 detected.netlogger_logs.append(path)
-            elif _is_config_file(path):
-                detected.ignored_files.append(path)
             else:
                 detected.ignored_files.append(path)
             continue
 
-        # Mode 1: strict /var/aux package parsing
         if aux_root is not None:
             try:
                 rel = path.relative_to(aux_root)
@@ -159,10 +164,8 @@ def detect_session_files(root: Path) -> DetectedFiles:
                         detected.ignored_files.append(path)
                 continue
             except ValueError:
-                # not in /var/aux, try full-folder mode below
                 pass
 
-        # Mode 2: full test folder (Acquisitions/Log/pcap)
         folder_type = _detect_full_test_structure(path)
         if folder_type == "log":
             if _is_config_file(path):
@@ -182,11 +185,19 @@ def detect_session_files(root: Path) -> DetectedFiles:
         elif folder_type == "pcap":
             if _is_pcap_file(path.name):
                 detected.generic_pcaps.append(path)
+            elif _is_supporting_image(path):
+                detected.supporting_images.append(path)
             else:
                 detected.ignored_files.append(path)
         elif folder_type == "acquisitions":
-            # non-csv/non-d7d/non-dxd in Acquisitions are ignored for now.
-            detected.ignored_files.append(path)
+            if path.suffix.lower() == ".csv":
+                detected.dewesoft_csv.append(path)
+            elif _is_dewesoft_binary(path):
+                detected.dewesoft_raw.append(path)
+            elif _is_supporting_image(path):
+                detected.supporting_images.append(path)
+            else:
+                detected.ignored_files.append(path)
         else:
             detected.ignored_files.append(path)
 
@@ -200,6 +211,7 @@ def detect_session_files(root: Path) -> DetectedFiles:
         "generic_pcaps",
         "dewesoft_csv",
         "dewesoft_raw",
+        "supporting_images",
         "ignored_files",
     ):
         getattr(detected, attr).sort()

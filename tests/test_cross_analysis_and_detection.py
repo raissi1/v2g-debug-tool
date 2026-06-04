@@ -22,6 +22,22 @@ def test_dewesoft_detection_in_expected_folders() -> None:
         assert len(detected.dewesoft_raw) == 2
 
 
+def test_real_world_aquisitions_layout_is_detected() -> None:
+    with TemporaryDirectory() as td:
+        root = Path(td)
+        target = root / "CES-1354" / "Aquisitions" / "1ph" / "limitation"
+        target.mkdir(parents=True)
+        (target / "Primara_20260323_152541.csv").write_text("time,P\n0,1\n")
+        (target / "Primara_20260323_152541.dmd").write_text("x")
+        (target / "Primara_20260323_152541_screenshot_20260323_153148.png").write_text("x")
+        (root / "CES-1354" / "Aquisitions" / "PU-st01-tri.d7d").write_text("x")
+
+        detected = detect_session_files(root)
+        assert len(detected.dewesoft_csv) == 1
+        assert len(detected.dewesoft_raw) == 2
+        assert len(detected.supporting_images) == 1
+
+
 def test_compare_sources_builds_cross_insights() -> None:
     frame = pd.DataFrame(
         [

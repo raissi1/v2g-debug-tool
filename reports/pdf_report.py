@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from io import BytesIO
+from pathlib import Path
 
 import pandas as pd
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import Image, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 
 CAUSE_LABELS = {
@@ -110,7 +111,8 @@ def generate_pdf_report(
             f"Meter dispatcher: {len(detected_summary.get('iotc_meter_dispatcher', []))} fichier(s)",
             f"PCAP: {len(detected_summary.get('netlogger_pcaps', [])) + len(detected_summary.get('generic_pcaps', []))} fichier(s)",
             f"Dewesoft CSV: {len(detected_summary.get('dewesoft_csv', []))} fichier(s)",
-            f"Dewesoft brut (.d7d/.dxd): {len(detected_summary.get('dewesoft_raw', []))} fichier(s)",
+            f"Dewesoft brut (.d7d/.dxd/.dmd): {len(detected_summary.get('dewesoft_raw', []))} fichier(s)",
+            f"Captures / images: {len(detected_summary.get('supporting_images', []))} fichier(s)",
         ]
         story.extend(_bullet_paragraphs(file_lines, styles["BodySmall"]))
     else:
@@ -182,6 +184,23 @@ def generate_pdf_report(
             "Aucune timeline exploitable.",
         )
     )
+
+    if detected_summary and detected_summary.get("supporting_images", []):
+        story.append(PageBreak())
+        story.append(Paragraph("Captures et illustrations", styles["SectionTitle"]))
+        story.append(Paragraph("Extraits visuels detectes dans le package de session.", styles["BodyText"]))
+        for raw_path in detected_summary.get("supporting_images", [])[:6]:
+            path = Path(raw_path)
+            if not path.exists():
+                continue
+            try:
+                story.append(Paragraph(path.name, styles["SubTitle"]))
+                image = Image(str(path))
+                image._restrictSize(170 * mm, 90 * mm)
+                story.append(image)
+                story.append(Spacer(1, 8))
+            except Exception:
+                continue
 
     doc.build(story)
     return buffer.getvalue()

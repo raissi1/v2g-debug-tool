@@ -406,7 +406,7 @@ def run_diagnostic(session_df: pd.DataFrame) -> dict:
         issues.append(f"Donnees manquantes: {', '.join(missing)}")
 
     if dew_status["raw_detected"] and not dew_status["csv_available"]:
-        result["evidence"].append("Fichiers Dewesoft bruts detectes (.d7d/.dxd), mais non exploitables sans conversion CSV.")
+        result["evidence"].append("Fichiers Dewesoft bruts detectes (.d7d/.dxd/.dmd), mais non exploitables sans conversion CSV.")
         issues.append("Dewesoft brut detecte: conversion CSV requise pour les mesures detaillees.")
 
     if result["cause_probable"] == "vehicule" and not dew_status["csv_available"]:

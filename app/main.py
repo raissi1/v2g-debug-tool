@@ -112,7 +112,8 @@ def _render_detected_files(st, detected_summary: dict) -> None:
     st.write(f"iotc-meter-dispatcher: **{len(detected_summary.get('iotc_meter_dispatcher', []))}**")
     st.write(f"PCAP detectes: **{pcap_total}**")
     st.write(f"Mesures Dewesoft CSV: **{len(detected_summary.get('dewesoft_csv', []))}**")
-    st.write(f"Mesures Dewesoft brutes (.d7d/.dxd): **{len(detected_summary.get('dewesoft_raw', []))}**")
+    st.write(f"Mesures Dewesoft brutes (.d7d/.dxd/.dmd): **{len(detected_summary.get('dewesoft_raw', []))}**")
+    st.write(f"Captures et images detectees: **{len(detected_summary.get('supporting_images', []))}**")
     if detected_summary.get("dewesoft_raw", []) and not detected_summary.get("dewesoft_csv", []):
         st.warning("Dewesoft brut detecte: present dans la session, mais conversion CSV requise pour exploiter les mesures.")
 
@@ -167,7 +168,7 @@ def run_streamlit_app() -> None:
                 st.success(f"ZIP charge: {uploaded_zip.name} ({size_mb:.1f} MB)")
 
         st.caption("Le ZIP peut contenir les logs borne, les traces PCAP et les exports Dewesoft CSV.")
-        analyze_clicked = st.button("Analyser la session", type="primary", use_container_width=True)
+        analyze_clicked = st.button("Analyser la session", type="primary", width="stretch")
 
         if st.session_state.analysis is not None:
             st.markdown("### Sources detectees")
@@ -301,6 +302,7 @@ def run_streamlit_app() -> None:
         st.write("Logs borne: utilises pour reconstruire la consigne, les recalculs, les limitations et les erreurs.")
         st.write("PCAP: utilises pour confirmer les echanges protocole quand ils sont exploitables dans la timeline.")
         st.write("Dewesoft CSV: utilises pour comparer les mesures physiques reelles avec les consignes et le meter interne.")
+        st.write("Captures: utiles pour documenter visuellement les transitions de consigne, mesures Primara et extractions protocole.")
 
         with st.expander("Voir le dictionnaire complet de detection"):
             st.json(detected_summary)
@@ -327,7 +329,7 @@ def run_streamlit_app() -> None:
                 filtered = filtered[filtered["message"].astype(str).str.contains(text_query, case=False, na=False)]
 
             visible_columns = [column for column in ["timestamp", "source", "event_type", "message", "interpretation"] if column in filtered.columns]
-            st.dataframe(filtered[visible_columns], use_container_width=True)
+            st.dataframe(filtered[visible_columns], width="stretch")
 
     with tabs[3]:
         st.subheader("Graphes physiques")
@@ -347,7 +349,7 @@ def run_streamlit_app() -> None:
             ]
         )
         if has_measure:
-            st.plotly_chart(build_signal_figure(timeseries), use_container_width=True)
+            st.plotly_chart(build_signal_figure(timeseries), width="stretch")
         else:
             st.info("Aucune mesure exploitable detectee. Importez un export CSV Dewesoft pour activer les graphes physiques.")
 
@@ -378,7 +380,7 @@ def run_streamlit_app() -> None:
         else:
             st.dataframe(
                 anomalies[[column for column in ["timestamp", "source", "event_type", "message"] if column in anomalies.columns]],
-                use_container_width=True,
+                width="stretch",
             )
 
         st.markdown("### Dewesoft")
@@ -388,7 +390,7 @@ def run_streamlit_app() -> None:
             st.write(f"Mesures CSV disponibles: {csv_count}")
         elif raw_count > 0:
             st.warning(
-                f"{raw_count} fichier(s) Dewesoft .d7d/.dxd detecte(s): presents dans la session, "
+                f"{raw_count} fichier(s) Dewesoft .d7d/.dxd/.dmd detecte(s): presents dans la session, "
                 "mais conversion CSV requise pour analyse detaillee."
             )
         else:
