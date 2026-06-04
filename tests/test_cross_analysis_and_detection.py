@@ -4,6 +4,7 @@ from tempfile import TemporaryDirectory
 import pandas as pd
 
 from analyzers.diagnostic_engine import compare_sources
+from parsers.dewesoft import convert_dewesoft_to_csv
 from utils.file_detector import detect_session_files
 
 
@@ -36,6 +37,18 @@ def test_real_world_aquisitions_layout_is_detected() -> None:
         assert len(detected.dewesoft_csv) == 1
         assert len(detected.dewesoft_raw) == 2
         assert len(detected.supporting_images) == 1
+
+
+def test_raw_dewesoft_prefers_sidecar_csv_when_present() -> None:
+    with TemporaryDirectory() as td:
+        root = Path(td)
+        raw = root / "Primara_20260323_152541.dmd"
+        csv = root / "Primara_20260323_152541.csv"
+        raw.write_text("x")
+        csv.write_text("time,P\n0,1\n")
+
+        converted = convert_dewesoft_to_csv(raw)
+        assert converted == csv
 
 
 def test_compare_sources_builds_cross_insights() -> None:

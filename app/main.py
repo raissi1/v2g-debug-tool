@@ -105,6 +105,110 @@ def _label_cause(value: str) -> str:
     return CAUSE_LABELS.get(str(value).lower(), str(value))
 
 
+def _inject_premium_css(st) -> None:
+    st.markdown(
+        """
+        <style>
+        .stApp {
+            background:
+                radial-gradient(circle at top left, rgba(14, 116, 144, 0.10), transparent 30%),
+                radial-gradient(circle at top right, rgba(2, 132, 199, 0.08), transparent 28%),
+                linear-gradient(180deg, #f5f8fc 0%, #edf3f9 100%);
+        }
+        section[data-testid="stSidebar"] {
+            background: linear-gradient(180deg, #f8fbff 0%, #eef4fb 100%);
+            border-right: 1px solid rgba(15, 23, 42, 0.08);
+        }
+        .premium-hero {
+            padding: 28px 30px;
+            border-radius: 28px;
+            color: white;
+            background: linear-gradient(135deg, #0f766e 0%, #155e75 45%, #0f172a 100%);
+            box-shadow: 0 20px 60px rgba(15, 23, 42, 0.16);
+            margin-bottom: 18px;
+        }
+        .premium-hero h1 {
+            margin: 0;
+            font-size: 3.1rem;
+            line-height: 1.02;
+            letter-spacing: -0.03em;
+        }
+        .premium-hero p {
+            margin: 10px 0 0 0;
+            font-size: 1.05rem;
+            color: rgba(255,255,255,0.92);
+        }
+        .premium-strip {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 14px;
+            margin: 16px 0 8px 0;
+        }
+        .premium-card {
+            background: rgba(255,255,255,0.92);
+            border: 1px solid rgba(15,23,42,0.07);
+            border-radius: 18px;
+            padding: 16px 18px;
+            box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
+        }
+        .premium-card .label {
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #475569;
+            margin-bottom: 8px;
+        }
+        .premium-card .value {
+            font-size: 1.35rem;
+            font-weight: 700;
+            color: #0f172a;
+        }
+        .premium-note {
+            background: linear-gradient(180deg, #fefce8 0%, #fff7cc 100%);
+            border: 1px solid rgba(202, 138, 4, 0.16);
+            border-radius: 18px;
+            padding: 14px 16px;
+            color: #854d0e;
+            margin: 10px 0 16px 0;
+        }
+        div[data-testid="stMetric"] {
+            background: rgba(255,255,255,0.88);
+            border: 1px solid rgba(15,23,42,0.06);
+            padding: 14px 16px;
+            border-radius: 18px;
+            box-shadow: 0 8px 24px rgba(15,23,42,0.05);
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_overview_strip(st, detected_summary: dict) -> None:
+    pcap_total = len(detected_summary.get("netlogger_pcaps", [])) + len(detected_summary.get("generic_pcaps", []))
+    dew_raw = len(detected_summary.get("dewesoft_raw", []))
+    dew_csv = len(detected_summary.get("dewesoft_csv", []))
+    st.markdown(
+        f"""
+        <div class="premium-strip">
+          <div class="premium-card">
+            <div class="label">Sources detectees</div>
+            <div class="value">{len(detected_summary.get('energy_manager', [])) + len(detected_summary.get('charger_app', [])) + len(detected_summary.get('iotc_meter_dispatcher', []))} logs metier</div>
+          </div>
+          <div class="premium-card">
+            <div class="label">Dewesoft</div>
+            <div class="value">{dew_csv} CSV / {dew_raw} bruts</div>
+          </div>
+          <div class="premium-card">
+            <div class="label">Protocoles</div>
+            <div class="value">{pcap_total} PCAP detectes</div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def _render_detected_files(st, detected_summary: dict) -> None:
     pcap_total = len(detected_summary.get("netlogger_pcaps", [])) + len(detected_summary.get("generic_pcaps", []))
     st.write(f"EnergyManager: **{len(detected_summary.get('energy_manager', []))}**")
@@ -142,12 +246,25 @@ def run_streamlit_app() -> None:
         ) from exc
 
     st.set_page_config(page_title="V2G Session Debugger", layout="wide")
+    _inject_premium_css(st)
 
-    st.title("V2G Session Debugger")
-    st.caption("Analyse automatique d'une session ZIP ou d'un dossier local pour trancher entre borne, vehicule et communication.")
-    st.info(
-        "Workflow metier: importer une session avec logs, PCAP et mesures Dewesoft, "
-        "reconstruire la timeline, correler les sources puis generer le verdict."
+    st.markdown(
+        """
+        <div class="premium-hero">
+          <h1>V2G Session Debugger</h1>
+          <p>Analyse multi-sources premium pour reconstituer la session, localiser l'ecart et produire un rapport exploitable en HTML et PDF.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        """
+        <div class="premium-note">
+          Workflow metier: importer une session avec logs, PCAP, captures et mesures Dewesoft,
+          reconstruire la timeline, correler les sources puis formuler un verdict motive.
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
     if "analysis" not in st.session_state:
@@ -171,6 +288,7 @@ def run_streamlit_app() -> None:
         analyze_clicked = st.button("Analyser la session", type="primary", width="stretch")
 
         if st.session_state.analysis is not None:
+            _render_overview_strip(st, st.session_state.analysis["detected_summary"])
             st.markdown("### Sources detectees")
             _render_detected_files(st, st.session_state.analysis["detected_summary"])
             with st.expander("Voir le detail des fichiers detectes"):
@@ -296,6 +414,7 @@ def run_streamlit_app() -> None:
 
     with tabs[1]:
         st.subheader("Inventaire des donnees detectees")
+        _render_overview_strip(st, detected_summary)
         _render_detected_files(st, detected_summary)
 
         st.markdown("### Detail des types de donnees")
