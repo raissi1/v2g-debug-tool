@@ -26,7 +26,7 @@ def test_indeterminate_when_ptarget_and_dewesoft_missing() -> None:
         ]
     )
     result = run_diagnostic(frame)
-    assert result["cause_probable"] == "indéterminé"
+    assert result["cause_probable"] == "indetermine"
     assert result["confidence_score"] <= 35
     assert "Ptarget" in ",".join(result["missing_data"])
 
@@ -46,4 +46,3 @@ def test_structured_evidence_table_is_present() -> None:
     result = run_diagnostic(frame)
     assert "evidence_table" in result
     assert isinstance(result["evidence_table"], list)
-

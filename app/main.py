@@ -30,6 +30,14 @@ from utils.file_detector import detect_session_files
 from utils.zip_loader import extract_zip_to_temp
 
 
+CAUSE_LABELS = {
+    "borne": "Cote borne",
+    "vehicule": "Cote vehicule",
+    "communication": "Cote communication",
+    "indetermine": "Indetermine",
+}
+
+
 def _resolve_input_source(
     input_mode: str,
     folder_path: str,
@@ -92,63 +100,61 @@ def _compute_overview_metrics(session_df: pd.DataFrame, detected_summary: dict) 
     }
 
 
+def _label_cause(value: str) -> str:
+    return CAUSE_LABELS.get(str(value).lower(), str(value))
+
+
+def _render_detected_files(st, detected_summary: dict) -> None:
+    pcap_total = len(detected_summary.get("netlogger_pcaps", [])) + len(detected_summary.get("generic_pcaps", []))
+    st.write(f"EnergyManager: **{len(detected_summary.get('energy_manager', []))}**")
+    st.write(f"ChargerApp: **{len(detected_summary.get('charger_app', []))}**")
+    st.write(f"iotc-meter-dispatcher: **{len(detected_summary.get('iotc_meter_dispatcher', []))}**")
+    st.write(f"PCAP detectes: **{pcap_total}**")
+    st.write(f"Mesures Dewesoft CSV: **{len(detected_summary.get('dewesoft_csv', []))}**")
+    st.write(f"Mesures Dewesoft brutes (.d7d/.dxd): **{len(detected_summary.get('dewesoft_raw', []))}**")
+
+
 def run_streamlit_app() -> None:
     try:
         import streamlit as st
+        import streamlit.components.v1 as components
     except ModuleNotFoundError as exc:
         raise RuntimeError(
-            "Streamlit n'est pas installé. Exécutez `pip install -r requirements.txt` "
+            "Streamlit n'est pas installe. Executez `pip install -r requirements.txt` "
             "puis lancez `streamlit run app/main.py`."
         ) from exc
 
     st.set_page_config(page_title="V2G Session Debugger", layout="wide")
 
     st.title("V2G Session Debugger")
-    st.caption("Analyse automatique logs / PCAP / mesures pour debug borne vs véhicule")
-    st.info("Workflow: Import session → détection fichiers → timeline → graphes → diagnostic → rapport")
+    st.caption("Analyse automatique d'une session ZIP ou d'un dossier local pour trancher entre borne, vehicule et communication.")
+    st.info(
+        "Workflow metier: importer une session avec logs, PCAP et mesures Dewesoft, "
+        "reconstruire la timeline, correler les sources puis generer le verdict."
+    )
 
     if "analysis" not in st.session_state:
         st.session_state.analysis = None
 
     with st.sidebar:
-        st.header("Entrée session")
+        st.header("Entree session")
         input_mode = st.radio("Type de source", ["Fichier ZIP", "Dossier local"], index=0)
         folder_path = ""
         uploaded_zip = None
 
         if input_mode == "Dossier local":
-            folder_path = st.text_input("Chemin dossier session", value="", placeholder="/path/to/session")
+            folder_path = st.text_input("Chemin dossier session", value="", placeholder="C:/.../session")
         else:
             uploaded_zip = st.file_uploader("Session ZIP", type=["zip"])
 
-        analyze_clicked = st.button("Analyser", type="primary", use_container_width=True)
+        st.caption("Le ZIP peut contenir les logs borne, les traces PCAP et les exports Dewesoft CSV.")
+        analyze_clicked = st.button("Analyser la session", type="primary", use_container_width=True)
 
         if st.session_state.analysis is not None:
-            dsum = st.session_state.analysis["detected_summary"]
-            st.markdown("### Fichiers détectés (compact)")
-            st.write(f"- EnergyManager: **{len(dsum.get('energy_manager', []))}**")
-            st.write(f"- ChargerApp: **{len(dsum.get('charger_app', []))}**")
-            st.write(f"- iotc-meter-dispatcher: **{len(dsum.get('iotc_meter_dispatcher', []))}**")
-            st.write(f"- PCAP total: **{len(dsum.get('netlogger_pcaps', [])) + len(dsum.get('generic_pcaps', []))}**")
-            st.write(f"  - netlogger PCAP: **{len(dsum.get('netlogger_pcaps', []))}**")
-            st.write(f"  - pcap/pcaps PCAP: **{len(dsum.get('generic_pcaps', []))}**")
-            st.write(f"- mesures CSV: **{len(dsum.get('dewesoft_csv', []))}**")
-            st.write(f"- mesures d7d/dxd: **{len(dsum.get('dewesoft_raw', []))}** (conversion requise)")
-
-            with st.expander("Voir les fichiers détectés"):
-                st.json(
-                    {
-                        "energy_manager": dsum.get("energy_manager", []),
-                        "charger_app": dsum.get("charger_app", []),
-                        "iotc_meter_dispatcher": dsum.get("iotc_meter_dispatcher", []),
-                        "netlogger_pcaps": dsum.get("netlogger_pcaps", []),
-                        "netlogger_logs": dsum.get("netlogger_logs", []),
-                        "dewesoft_csv": dsum.get("dewesoft_csv", []),
-                        "dewesoft_raw": dsum.get("dewesoft_raw", []),
-                        "generic_logs": dsum.get("generic_logs", []),
-                        "generic_pcaps": dsum.get("generic_pcaps", []),
-                    }
-                )
+            st.markdown("### Sources detectees")
+            _render_detected_files(st, st.session_state.analysis["detected_summary"])
+            with st.expander("Voir le detail des fichiers detectes"):
+                st.json(st.session_state.analysis["detected_summary"])
 
     if analyze_clicked:
         temp_dir: tempfile.TemporaryDirectory[str] | None = None
@@ -178,7 +184,7 @@ def run_streamlit_app() -> None:
 
     analysis = st.session_state.analysis
     if analysis is None:
-        st.warning("Aucune analyse disponible. Chargez une session puis cliquez sur Analyser.")
+        st.warning("Aucune analyse disponible. Chargez une session puis cliquez sur Analyser la session.")
         return
 
     session_df: pd.DataFrame = analysis["session_df"]
@@ -187,43 +193,69 @@ def run_streamlit_app() -> None:
     diagnostic: dict = analysis["diagnostic"]
     detected_summary: dict = analysis["detected_summary"]
     metrics = _compute_overview_metrics(session_df, detected_summary)
+    report_html = generate_html_report(summary_lines, diagnostic, session_df, detected_summary)
 
-    tabs = st.tabs(["Vue d’ensemble", "Timeline", "Graphes", "Anomalies", "Diagnostic", "Rapport"])
+    tabs = st.tabs(["Verdict", "Sources", "Timeline", "Graphes", "Preuves", "Rapport"])
 
     with tabs[0]:
         c1, c2, c3, c4 = st.columns(4)
         c5, c6, c7, c8 = st.columns(4)
-        c1.metric("Fichiers analysés", metrics["files_analyzed"])
-        c2.metric("Événements", metrics["events"])
+        c1.metric("Fichiers analyses", metrics["files_analyzed"])
+        c2.metric("Evenements", metrics["events"])
         c3.metric("Erreurs", metrics["errors"])
         c4.metric("Warnings", metrics["warnings"])
         c5.metric("GridCodes", metrics["gridcodes"])
         c6.metric("Setpoints", metrics["setpoints"])
-        c7.metric("PCAP détectés", metrics["pcaps"])
-        c8.metric("Mesures détectées", metrics["measures"])
+        c7.metric("PCAP detectes", metrics["pcaps"])
+        c8.metric("Mesures detectees", metrics["measures"])
 
-        st.markdown("### Résumé automatique")
+        cause = diagnostic.get("cause_probable", "indetermine")
+        confidence = diagnostic.get("confidence_score", 0)
+        confidence_label = diagnostic.get("confidence", "Faible")
+        verdict_label = _label_cause(cause)
+
+        st.subheader("Verdict principal")
+        if cause == "borne":
+            st.error(f"{verdict_label} | confiance {confidence_label} ({confidence}%)")
+        elif cause == "vehicule":
+            st.warning(f"{verdict_label} | confiance {confidence_label} ({confidence}%)")
+        elif cause == "communication":
+            st.info(f"{verdict_label} | confiance {confidence_label} ({confidence}%)")
+        else:
+            st.info(f"{verdict_label} | confiance {confidence_label} ({confidence}%)")
+
+        st.markdown("### Lecture metier")
+        st.write(diagnostic.get("justification", "Aucune justification disponible."))
+        st.write(diagnostic.get("executive_summary", ""))
+
+        st.markdown("### Resume automatique")
         if session_df.empty:
-            st.info("Aucun événement exploitable détecté dans la session.")
+            st.info("Aucun evenement exploitable detecte dans la session.")
         else:
             readable_summary = (
-                f"La session contient {metrics['events']} événements, avec {metrics['errors']} erreurs et "
-                f"{metrics['warnings']} warnings. {metrics['setpoints']} changements de consigne ont été détectés, "
-                f"ainsi que {metrics['gridcodes']} événements GridCodes. "
+                f"La session contient {metrics['events']} evenements, avec {metrics['errors']} erreurs et "
+                f"{metrics['warnings']} warnings. {metrics['setpoints']} changements de consigne ont ete detectes, "
+                f"ainsi que {metrics['gridcodes']} evenements GridCodes. "
                 f"Les sources disponibles incluent {len(detected_summary.get('energy_manager', []))} fichier(s) EnergyManager, "
                 f"{len(detected_summary.get('charger_app', []))} fichier(s) ChargerApp et "
                 f"{len(detected_summary.get('iotc_meter_dispatcher', []))} fichier(s) meter dispatcher."
             )
             st.write(readable_summary)
-            st.markdown("**Résumé exécutif**")
-            st.info(
-                f"Cause probable: {diagnostic.get('cause_probable', 'indéterminé')} | "
-                f"Confiance: {diagnostic.get('confidence_score', 0)}% | "
-                f"{diagnostic.get('justification', '')}"
-            )
 
     with tabs[1]:
-        st.markdown("### Timeline filtrable")
+        st.subheader("Inventaire des donnees detectees")
+        _render_detected_files(st, detected_summary)
+
+        st.markdown("### Detail des types de donnees")
+        st.write("Logs borne: utilises pour reconstruire la consigne, les recalculs, les limitations et les erreurs.")
+        st.write("PCAP: utilises pour confirmer les echanges protocole quand ils sont exploitables dans la timeline.")
+        st.write("Dewesoft CSV: utilises pour comparer les mesures physiques reelles avec les consignes et le meter interne.")
+
+        with st.expander("Voir le dictionnaire complet de detection"):
+            st.json(detected_summary)
+
+    with tabs[2]:
+        st.subheader("Timeline filtrable")
         if session_df.empty:
             st.info("Timeline vide.")
         else:
@@ -232,7 +264,7 @@ def run_streamlit_app() -> None:
 
             col_f1, col_f2, col_f3 = st.columns([1, 1, 2])
             source_filter = col_f1.multiselect("Source", sources)
-            event_filter = col_f2.multiselect("Event type", event_types)
+            event_filter = col_f2.multiselect("Type d'evenement", event_types)
             text_query = col_f3.text_input("Recherche texte", value="")
 
             filtered = session_df.copy()
@@ -243,78 +275,82 @@ def run_streamlit_app() -> None:
             if text_query:
                 filtered = filtered[filtered["message"].astype(str).str.contains(text_query, case=False, na=False)]
 
-            visible_columns = [c for c in ["timestamp", "source", "event_type", "message", "interpretation"] if c in filtered.columns]
+            visible_columns = [column for column in ["timestamp", "source", "event_type", "message", "interpretation"] if column in filtered.columns]
             st.dataframe(filtered[visible_columns], use_container_width=True)
 
-    with tabs[2]:
-        st.markdown("### Graphes physiques")
+    with tabs[3]:
+        st.subheader("Graphes physiques")
         has_measure = not timeseries.empty and any(
-            col in timeseries.columns and pd.to_numeric(timeseries[col], errors="coerce").notna().any()
-            for col in ["Ptarget", "P_meter", "P_dewesoft", "Qtarget", "Q_meter", "Q_dewesoft", "U_meter", "U_dewesoft", "frequency_meter", "frequency_dewesoft"]
+            column in timeseries.columns and pd.to_numeric(timeseries[column], errors="coerce").notna().any()
+            for column in [
+                "Ptarget",
+                "P_meter",
+                "P_dewesoft",
+                "Qtarget",
+                "Q_meter",
+                "Q_dewesoft",
+                "U_meter",
+                "U_dewesoft",
+                "frequency_meter",
+                "frequency_dewesoft",
+            ]
         )
         if has_measure:
             st.plotly_chart(build_signal_figure(timeseries), use_container_width=True)
         else:
-            st.info(
-                "Aucune mesure exploitable détectée. Importer un export CSV Dewesoft "
-                "pour activer les graphes physiques."
-            )
-
-    with tabs[3]:
-        st.markdown("### Anomalies détectées")
-        if session_df.empty:
-            st.info("Aucune anomalie: timeline vide.")
-        else:
-            anomaly_types = ["error", "warning", "power_limit", "timeout", "protocol_event", "gridcodes"]
-            anomalies = session_df[session_df["event_type"].isin(anomaly_types)].copy()
-            if anomalies.empty:
-                st.success("Aucune anomalie majeure détectée dans les catégories surveillées.")
-            else:
-                st.dataframe(
-                    anomalies[[c for c in ["timestamp", "source", "event_type", "message"] if c in anomalies.columns]],
-                    use_container_width=True,
-                )
+            st.info("Aucune mesure exploitable detectee. Importez un export CSV Dewesoft pour activer les graphes physiques.")
 
     with tabs[4]:
-        st.markdown("### Conclusion diagnostic")
-        conclusion = diagnostic.get("cause_probable", "indéterminé")
-        confidence = diagnostic.get("confidence_score", 0)
+        st.subheader("Preuves et anomalies")
 
-        st.success(f"Origine probable : **{conclusion}**")
-        st.write(f"**Niveau de confiance :** {confidence}%")
+        st.markdown("### Ecarts cles")
+        insights = diagnostic.get("cross_analysis", {}).get("insights", [])
+        if insights:
+            for insight in insights:
+                st.write(f"- {insight}")
+        else:
+            st.write("Aucun ecart fort remonte par la correlation inter-sources.")
 
-        st.markdown("**Explication claire**")
-        st.write(diagnostic.get("justification", "Aucune justification disponible."))
+        st.markdown("### Preuves utilisees")
+        for evidence in diagnostic.get("evidence", []):
+            st.write(f"- {evidence}")
 
-        st.markdown("**Preuves utilisées**")
-        for ev in diagnostic.get("evidence", []):
-            st.write(f"- {ev}")
-
-        st.markdown("**Données manquantes**")
+        st.markdown("### Donnees manquantes")
         missing_data = diagnostic.get("missing_data", [])
-        st.write(", ".join(missing_data) if missing_data else "Aucune donnée critique manquante détectée.")
+        st.write(", ".join(missing_data) if missing_data else "Aucune donnee critique manquante detectee.")
 
+        st.markdown("### Anomalies detectees")
+        anomaly_types = ["error", "warning", "power_limit", "timeout", "protocol_event", "gridcodes"]
+        anomalies = session_df[session_df["event_type"].isin(anomaly_types)].copy() if not session_df.empty else pd.DataFrame()
+        if anomalies.empty:
+            st.success("Aucune anomalie majeure detectee dans les categories surveillees.")
+        else:
+            st.dataframe(
+                anomalies[[column for column in ["timestamp", "source", "event_type", "message"] if column in anomalies.columns]],
+                use_container_width=True,
+            )
+
+        st.markdown("### Dewesoft")
         csv_count = len(detected_summary.get("dewesoft_csv", []))
         raw_count = len(detected_summary.get("dewesoft_raw", []))
-        st.markdown("**Données Dewesoft**")
         if csv_count > 0:
             st.write(f"Mesures CSV disponibles: {csv_count}")
         elif raw_count > 0:
-            st.warning(f"{raw_count} fichier(s) Dewesoft .d7d/.dxd détecté(s): conversion Dewesoft requise.")
+            st.warning(f"{raw_count} fichier(s) Dewesoft .d7d/.dxd detecte(s): conversion Dewesoft requise.")
         else:
-            st.info("Aucune acquisition Dewesoft détectée.")
+            st.info("Aucune acquisition Dewesoft detectee.")
 
     with tabs[5]:
-        st.markdown("### Export rapport")
-        report_html = generate_html_report(summary_lines, diagnostic, session_df, detected_summary)
+        st.subheader("Rapport HTML")
+        components.html(report_html, height=900, scrolling=True)
         st.download_button(
-            "Télécharger rapport HTML",
+            "Telecharger le rapport HTML",
             data=report_html.encode("utf-8"),
             file_name="v2g_debug_report.html",
             mime="text/html",
         )
         st.download_button(
-            "Télécharger timeline (CSV)",
+            "Telecharger la timeline CSV",
             data=session_df.to_csv(index=False).encode("utf-8"),
             file_name="v2g_session_timeline.csv",
             mime="text/csv",

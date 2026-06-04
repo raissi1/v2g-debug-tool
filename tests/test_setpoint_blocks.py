@@ -34,8 +34,8 @@ def test_requested_and_published_setpoints_are_filled_from_textual_logs() -> Non
     requested = result["blocks"]["A_requested"]
     published = result["blocks"]["B_station_computed"]
 
-    assert requested, "A. Ce qui a été demandé ne doit pas être vide"
-    assert published, "B. Ce que la borne a calculé/publié ne doit pas être vide"
+    assert requested, "A. Ce qui a ete demande ne doit pas etre vide"
+    assert published, "B. Ce que la borne a calcule/publie ne doit pas etre vide"
     assert any("setpoint" in line.lower() or "maxpower_w" in line.lower() for line in requested)
     assert any("published" in line.lower() or "publication borne" in line.lower() for line in published)
 
@@ -62,5 +62,5 @@ def test_vehicle_conclusion_is_downgraded_without_dewesoft() -> None:
         ]
     )
     result = run_diagnostic(frame)
-    assert result["cause_probable"] in {"véhicule", "indéterminé"}
+    assert result["cause_probable"] in {"vehicule", "indetermine"}
     assert result["confidence_score"] <= 55
