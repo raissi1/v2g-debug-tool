@@ -48,7 +48,7 @@ def test_compare_sources_builds_cross_insights() -> None:
     )
     cross = compare_sources(frame)
     assert cross["rows"]
-    assert any("véhicule" in msg.lower() or "pcap" in msg.lower() for msg in cross["insights"])
+    assert any("vehicule" in message.lower() or "pcap" in message.lower() for message in cross["insights"])
 
 
 def test_compare_sources_survives_noise_only_timeline() -> None:
@@ -75,6 +75,5 @@ def test_compare_sources_survives_noise_only_timeline() -> None:
 
     assert cross["rows"] == []
     assert isinstance(cross["insights"], list)
-    assert cross["scores"] == {"borne": 0.0, "véhicule": 0.0, "communication": 0.0}
+    assert cross["scores"] == {"borne": 0.0, "vehicule": 0.0, "communication": 0.0}
     assert cross["evidence_table"] == []
-
