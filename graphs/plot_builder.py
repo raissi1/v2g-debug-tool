@@ -40,17 +40,30 @@ def build_signal_figure(timeseries: pd.DataFrame, first_divergence: dict | None 
     if "event_type" in timeseries.columns:
         events = timeseries[timeseries["event_type"].isin(["error", "timeout", "protocol_event", "gridcodes"])]
         for ts in events["timestamp"].dropna().head(50):
-            fig.add_vline(x=ts, line_width=1, line_dash="dot", line_color="gray")
+            fig.add_shape(
+                type="line",
+                x0=ts,
+                x1=ts,
+                y0=0,
+                y1=1,
+                xref="x",
+                yref="paper",
+                line={"width": 1, "dash": "dot", "color": "gray"},
+            )
 
     divergence_ts = None
     if first_divergence and first_divergence.get("timestamp"):
         divergence_ts = pd.to_datetime(first_divergence["timestamp"], utc=True, errors="coerce")
     if divergence_ts is not None and pd.notna(divergence_ts):
-        fig.add_vline(
-            x=divergence_ts,
-            line_width=3,
-            line_dash="dash",
-            line_color="red",
+        fig.add_shape(
+            type="line",
+            x0=divergence_ts,
+            x1=divergence_ts,
+            y0=0,
+            y1=1,
+            xref="x",
+            yref="paper",
+            line={"width": 3, "dash": "dash", "color": "red"},
         )
         fig.add_annotation(
             x=divergence_ts,
