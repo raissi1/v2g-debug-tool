@@ -25,6 +25,16 @@ def _label_cause(value: str | None) -> str:
     return CAUSE_LABELS.get(str(value or "").lower(), str(value or "Indetermine"))
 
 
+def _label_classifier_confidence(value: str | None) -> str:
+    mapping = {
+        "HIGH": "Elevee",
+        "MEDIUM": "Moyenne",
+        "LOW": "Faible",
+        "INDETERMINATE": "Indeterminee",
+    }
+    return mapping.get(str(value or "").upper(), str(value or "Indeterminee"))
+
+
 def _styles():
     styles = getSampleStyleSheet()
     styles.add(ParagraphStyle(name="CoverTitle", fontName="Helvetica-Bold", fontSize=24, leading=30, textColor=colors.HexColor("#0f172a"), spaceAfter=12))
@@ -86,6 +96,7 @@ def generate_pdf_report(
     cross = diagnostic.get("cross_analysis", {}) or {}
     generic_rules = diagnostic.get("generic_rules", []) or []
     generic_rule_summary = diagnostic.get("generic_rule_summary", {}) or {}
+    v2g_classification = diagnostic.get("v2g_classification", {}) or {}
 
     story.append(Paragraph("Rapport d'analyse V2G", styles["CoverTitle"]))
     story.append(Paragraph(f"Verdict principal: <b>{_label_cause(cause)}</b>", styles["BodyText"]))
@@ -113,6 +124,45 @@ def generate_pdf_report(
             f"{first_divergence.get('category')} - {divergence_text}"
         )
     story.append(Paragraph(divergence_text, styles["BodyText"]))
+    story.append(Spacer(1, 8))
+
+    story.append(Paragraph("Classification V2G ciblee", styles["SectionTitle"]))
+    story.append(
+        Paragraph(
+            f"Cause ciblee: <b>{_label_cause(v2g_classification.get('cause', 'indetermine'))}</b> | "
+            f"Confiance: {_label_classifier_confidence(v2g_classification.get('confidence', 'INDETERMINATE'))} "
+            f"({v2g_classification.get('confidence_score', 0)}%)",
+            styles["BodyText"],
+        )
+    )
+    story.append(
+        Paragraph(
+            "Scores: "
+            f"borne={v2g_classification.get('borne_score', 0)} | "
+            f"vehicule={v2g_classification.get('vehicule_score', 0)} | "
+            f"communication={v2g_classification.get('communication_score', 0)}",
+            styles["BodyText"],
+        )
+    )
+    story.append(Paragraph(v2g_classification.get("justification", "Aucune justification specifique disponible."), styles["BodyText"]))
+    story.append(Paragraph("Preuves V2G", styles["SubTitle"]))
+    v2g_evidence_lines = []
+    for item in v2g_classification.get("evidence", []) or []:
+        line = str(item.get("message") or item.get("signal") or "").strip()
+        details = item.get("details") or []
+        if details:
+            line = f"{line} ({', '.join(str(part) for part in details[:3])})"
+        if line:
+            v2g_evidence_lines.append(line)
+    story.extend(_bullet_paragraphs(v2g_evidence_lines, styles["BodySmall"], empty_label="Aucune preuve V2G ciblee"))
+    story.append(Paragraph("Recommandations V2G", styles["SubTitle"]))
+    story.extend(
+        _bullet_paragraphs(
+            [str(item) for item in (v2g_classification.get("recommendations", []) or [])],
+            styles["BodySmall"],
+            empty_label="Aucune recommandation supplementaire",
+        )
+    )
     story.append(Spacer(1, 8))
 
     story.append(Paragraph("Sources detectees", styles["SectionTitle"]))

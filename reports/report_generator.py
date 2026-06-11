@@ -22,6 +22,16 @@ def _label_cause(value: str | None) -> str:
     return CAUSE_LABELS.get(str(value or "").lower(), str(value or "Indetermine"))
 
 
+def _label_classifier_confidence(value: str | None) -> str:
+    mapping = {
+        "HIGH": "Elevee",
+        "MEDIUM": "Moyenne",
+        "LOW": "Faible",
+        "INDETERMINATE": "Indeterminee",
+    }
+    return mapping.get(str(value or "").upper(), str(value or "Indeterminee"))
+
+
 def _to_list_html(values: list[str], empty_label: str = "Aucun element exploitable") -> str:
     if not values:
         return f"<li>{escape(empty_label)}</li>"
@@ -277,6 +287,7 @@ def generate_html_report(
     first_divergence = diagnostic.get("first_divergence", {}) or {}
     generic_rules = diagnostic.get("generic_rules", []) or []
     generic_rule_summary = diagnostic.get("generic_rule_summary", {}) or {}
+    v2g_classification = diagnostic.get("v2g_classification", {}) or {}
 
     requested_lines = blocks.get("A_requested", [])
     station_lines = blocks.get("B_station_computed", [])
@@ -286,6 +297,18 @@ def generate_html_report(
     insight_lines = cross.get("insights", [])
     evidence_lines = diagnostic.get("evidence", [])
     recommendation_lines = _build_recommendations(diagnostic, detected_summary)
+    classifier_cause_label = _label_cause(v2g_classification.get("cause", "indetermine"))
+    classifier_confidence = _label_classifier_confidence(v2g_classification.get("confidence", "INDETERMINATE"))
+    classifier_confidence_score = int(v2g_classification.get("confidence_score", 0) or 0)
+    classifier_evidence_lines = []
+    for item in v2g_classification.get("evidence", []) or []:
+        line = str(item.get("message") or item.get("signal") or "").strip()
+        details = item.get("details") or []
+        if details:
+            line = f"{line} ({', '.join(str(part) for part in details[:3])})"
+        if line:
+            classifier_evidence_lines.append(line)
+    classifier_recommendations = [str(item) for item in (v2g_classification.get("recommendations", []) or [])]
 
     pcap_total = 0
     dew_total = 0
@@ -687,6 +710,37 @@ def generate_html_report(
             </div>
             <div class="metrics-grid" style="margin-top: 18px;">
               {verdict_cards_html}
+            </div>
+          </section>
+
+          <section class="panel">
+            <h2>Classification V2G ciblee</h2>
+            <div class="two-col">
+              <div class="summary-box">
+                <strong>Verdict specialise</strong>
+                <p>
+                  Cause ciblee: <b>{escape(classifier_cause_label)}</b><br>
+                  Confiance: {escape(classifier_confidence)} ({escape(str(classifier_confidence_score))}%)<br>
+                  Scores: borne={escape(str(v2g_classification.get("borne_score", 0)))},
+                  vehicule={escape(str(v2g_classification.get("vehicule_score", 0)))},
+                  communication={escape(str(v2g_classification.get("communication_score", 0)))}
+                </p>
+                <p>{escape(str(v2g_classification.get("justification") or "Aucune justification specifique disponible."))}</p>
+              </div>
+              <div class="summary-box">
+                <strong>Actions conseillees</strong>
+                <ul>{_to_list_html(classifier_recommendations, empty_label="Aucune recommandation supplementaire")}</ul>
+              </div>
+            </div>
+            <div class="two-col" style="margin-top: 18px;">
+              <div class="summary-box">
+                <strong>Preuves V2G retenues</strong>
+                <ul>{_to_list_html(classifier_evidence_lines, empty_label="Aucune preuve V2G ciblee")}</ul>
+              </div>
+              <div class="summary-box">
+                <strong>Qualite des donnees</strong>
+                <ul>{_to_list_html([f"{key}: {'oui' if value else 'non'}" for key, value in (v2g_classification.get('data_quality', {}) or {}).items()], empty_label="Qualite des donnees non detaillee")}</ul>
+              </div>
             </div>
           </section>
 

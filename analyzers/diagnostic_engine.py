@@ -9,6 +9,7 @@ import pandas as pd
 from analyzers.divergence_detector import detect_first_divergence
 from analyzers.generic_rule_engine import evaluate_generic_rules
 from analyzers.source_comparison import compare_sources as compare_sources_weighted
+from analyzers.v2g_fault_classifier import classify_v2g_fault
 
 
 CAUSE_LABELS = {
@@ -310,6 +311,18 @@ def run_diagnostic(session_df: pd.DataFrame) -> dict:
         },
         "generic_rules": [],
         "generic_rule_summary": {"pass": 0, "fail": 0, "warn": 0, "unknown": 0},
+        "v2g_classification": {
+            "cause": "indetermine",
+            "confidence": "INDETERMINATE",
+            "confidence_score": 20,
+            "justification": "Donnees insuffisantes pour trancher.",
+            "evidence": [],
+            "borne_score": 0.0,
+            "vehicule_score": 0.0,
+            "communication_score": 0.0,
+            "recommendations": [],
+            "data_quality": {},
+        },
     }
 
     if simplified.empty:
@@ -319,6 +332,7 @@ def run_diagnostic(session_df: pd.DataFrame) -> dict:
         result["conclusion"] = "Indetermine"
         result["confidence"] = "Faible"
         result["executive_summary"] = "Aucune donnee exploitable dans la timeline."
+        result["v2g_classification"] = classify_v2g_fault(session_df, {})
         return result
 
     missing = []
@@ -328,6 +342,7 @@ def run_diagnostic(session_df: pd.DataFrame) -> dict:
     result["missing_data"] = missing
 
     cross = compare_sources(session_df)
+    v2g_classification = classify_v2g_fault(session_df, cross)
     first_divergence = detect_first_divergence(session_df, cross)
     scores = cross.get("scores", {})
     evidence_table = cross.get("evidence_table", [])
@@ -390,6 +405,7 @@ def run_diagnostic(session_df: pd.DataFrame) -> dict:
         "indetermine": "Aucune piste dominante ne se detache clairement.",
     }
     result["best_lead_reason"] = lead_reason_map.get(best_cause, lead_reason_map["indetermine"])
+    result["v2g_classification"] = v2g_classification
 
     if ("Ptarget" in missing) and (not dew_status["csv_available"]):
         result["cause_probable"] = "indetermine"
@@ -430,6 +446,24 @@ def run_diagnostic(session_df: pd.DataFrame) -> dict:
         result["confidence_score"] = min(result["confidence_score"], 55)
         result["justification"] += " Dewesoft CSV non exploite: confiance abaissee pour une conclusion cote vehicule."
         result["evidence"].append("Absence de Dewesoft CSV exploitable: rester prudent pour une conclusion cote vehicule.")
+
+    classifier_cause = str(v2g_classification.get("cause", "indetermine")).lower()
+    classifier_score = int(v2g_classification.get("confidence_score", 0) or 0)
+    if classifier_cause != "indetermine" and classifier_score >= max(55, result["confidence_score"]):
+        result["cause_probable"] = classifier_cause
+        result["confidence_score"] = classifier_score
+        result["justification"] = str(v2g_classification.get("justification") or result["justification"])
+        result["best_lead"] = classifier_cause
+        result["best_lead_reason"] = (
+            f"Classification V2G orientee {_label_cause(classifier_cause)} "
+            f"avec score borne={v2g_classification.get('borne_score', 0)}, "
+            f"vehicule={v2g_classification.get('vehicule_score', 0)}, "
+            f"communication={v2g_classification.get('communication_score', 0)}."
+        )
+        for item in v2g_classification.get("evidence", [])[:4]:
+            message = str(item.get("message") or item.get("signal") or "").strip()
+            if message and message not in result["evidence"]:
+                result["evidence"].append(message)
 
     failed_rules = [rule for rule in result["generic_rules"] if rule.get("status") == "fail"]
     warn_rules = [rule for rule in result["generic_rules"] if rule.get("status") == "warn"]

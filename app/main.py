@@ -105,6 +105,16 @@ def _label_cause(value: str) -> str:
     return CAUSE_LABELS.get(str(value).lower(), str(value))
 
 
+def _label_classifier_confidence(value: str) -> str:
+    mapping = {
+        "HIGH": "Elevee",
+        "MEDIUM": "Moyenne",
+        "LOW": "Faible",
+        "INDETERMINATE": "Indeterminee",
+    }
+    return mapping.get(str(value or "").upper(), str(value or "Indeterminee"))
+
+
 def _inject_premium_css(st) -> None:
     st.markdown(
         """
@@ -692,6 +702,38 @@ def run_streamlit_app() -> None:
         st.markdown("### Lecture metier")
         st.write(diagnostic.get("justification", "Aucune justification disponible."))
         st.write(diagnostic.get("executive_summary", ""))
+        st.markdown("### Classification V2G")
+        v2g_classification = diagnostic.get("v2g_classification", {}) or {}
+        classifier_cause = _label_cause(v2g_classification.get("cause", "indetermine"))
+        classifier_confidence = _label_classifier_confidence(v2g_classification.get("confidence", "INDETERMINATE"))
+        classifier_score = int(v2g_classification.get("confidence_score", 0) or 0)
+        st.write(
+            f"Verdict V2G cible: **{classifier_cause}** | "
+            f"confiance **{classifier_confidence} ({classifier_score}%)**"
+        )
+        st.write(v2g_classification.get("justification", "Aucune justification specifique disponible."))
+        score_c1, score_c2, score_c3 = st.columns(3)
+        score_c1.metric("Score borne", v2g_classification.get("borne_score", 0))
+        score_c2.metric("Score vehicule", v2g_classification.get("vehicule_score", 0))
+        score_c3.metric("Score communication", v2g_classification.get("communication_score", 0))
+
+        classifier_evidence = v2g_classification.get("evidence", []) or []
+        if classifier_evidence:
+            st.markdown("### Preuves V2G retenues")
+            for item in classifier_evidence[:8]:
+                lead = item.get("message") or item.get("signal") or "Preuve"
+                side = _label_cause(item.get("side", "indetermine"))
+                details = item.get("details") or []
+                detail_text = f" | details: {', '.join(str(part) for part in details[:3])}" if details else ""
+                ts = item.get("timestamp") or "horodatage non disponible"
+                st.write(f"- {side} | {ts} | {lead}{detail_text}")
+
+        recommendations = v2g_classification.get("recommendations", []) or []
+        if recommendations:
+            st.markdown("### Recommandations V2G")
+            for recommendation in recommendations:
+                st.write(f"- {recommendation}")
+
         st.markdown("### Point de depart probable")
         issue_origin = diagnostic.get("issue_origin", {}) or {}
         first_divergence = diagnostic.get("first_divergence", {}) or {}
