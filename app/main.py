@@ -111,32 +111,158 @@ def _inject_premium_css(st) -> None:
         <style>
         .stApp {
             background:
-                radial-gradient(circle at top left, rgba(14, 116, 144, 0.10), transparent 30%),
-                radial-gradient(circle at top right, rgba(2, 132, 199, 0.08), transparent 28%),
-                linear-gradient(180deg, #f5f8fc 0%, #edf3f9 100%);
+                radial-gradient(circle at 14% 12%, rgba(13, 148, 136, 0.15), transparent 26%),
+                radial-gradient(circle at 88% 10%, rgba(14, 165, 233, 0.12), transparent 24%),
+                linear-gradient(180deg, #f4f8fc 0%, #ebf2f8 52%, #e8eef6 100%);
+        }
+        .block-container {
+            max-width: 1320px;
+            padding-top: 2.1rem;
+            padding-bottom: 2.5rem;
+            padding-left: 2.4rem;
+            padding-right: 2.4rem;
         }
         section[data-testid="stSidebar"] {
-            background: linear-gradient(180deg, #f8fbff 0%, #eef4fb 100%);
+            background:
+                linear-gradient(180deg, rgba(248, 251, 255, 0.97) 0%, rgba(237, 244, 251, 0.98) 100%);
             border-right: 1px solid rgba(15, 23, 42, 0.08);
+            backdrop-filter: blur(12px);
+        }
+        section[data-testid="stSidebar"] > div {
+            padding-top: 1.2rem;
+        }
+        .premium-shell {
+            display: grid;
+            gap: 1rem;
+        }
+        .hero-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.65fr) minmax(280px, 0.85fr);
+            gap: 18px;
+            align-items: stretch;
         }
         .premium-hero {
-            padding: 28px 30px;
-            border-radius: 28px;
+            position: relative;
+            overflow: hidden;
+            padding: 30px 32px 32px 32px;
+            border-radius: 30px;
             color: white;
-            background: linear-gradient(135deg, #0f766e 0%, #155e75 45%, #0f172a 100%);
-            box-shadow: 0 20px 60px rgba(15, 23, 42, 0.16);
+            background:
+                radial-gradient(circle at top right, rgba(255,255,255,0.18), transparent 28%),
+                linear-gradient(135deg, #0f766e 0%, #155e75 48%, #0f172a 100%);
+            box-shadow: 0 24px 70px rgba(15, 23, 42, 0.18);
+            min-height: 290px;
+        }
+        .premium-hero::after {
+            content: "";
+            position: absolute;
+            inset: auto -40px -55px auto;
+            width: 180px;
+            height: 180px;
+            background: radial-gradient(circle, rgba(255,255,255,0.22), transparent 70%);
+            pointer-events: none;
+        }
+        .hero-kicker {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 7px 12px;
+            border-radius: 999px;
+            background: rgba(255,255,255,0.14);
+            border: 1px solid rgba(255,255,255,0.18);
+            font-size: 0.8rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
             margin-bottom: 18px;
         }
         .premium-hero h1 {
             margin: 0;
-            font-size: 3.1rem;
-            line-height: 1.02;
+            font-size: 3rem;
+            line-height: 0.98;
             letter-spacing: -0.03em;
+            max-width: 760px;
         }
         .premium-hero p {
-            margin: 10px 0 0 0;
-            font-size: 1.05rem;
-            color: rgba(255,255,255,0.92);
+            margin: 14px 0 0 0;
+            font-size: 1.08rem;
+            line-height: 1.65;
+            max-width: 920px;
+            color: rgba(255,255,255,0.9);
+        }
+        .hero-band {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 22px;
+        }
+        .hero-band span {
+            padding: 9px 12px;
+            border-radius: 999px;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.14);
+            font-size: 0.92rem;
+            color: rgba(255,255,255,0.94);
+        }
+        .hero-aside {
+            display: grid;
+            gap: 14px;
+        }
+        .hero-panel {
+            background: rgba(255,255,255,0.84);
+            border: 1px solid rgba(15,23,42,0.08);
+            border-radius: 24px;
+            padding: 18px 18px 16px 18px;
+            box-shadow: 0 16px 38px rgba(15, 23, 42, 0.08);
+            backdrop-filter: blur(8px);
+        }
+        .hero-panel h3 {
+            margin: 0 0 12px 0;
+            font-size: 1rem;
+            color: #0f172a;
+        }
+        .hero-panel p {
+            margin: 0;
+            color: #475569;
+            line-height: 1.5;
+            font-size: 0.95rem;
+        }
+        .hero-checklist {
+            display: grid;
+            gap: 10px;
+        }
+        .hero-check {
+            display: grid;
+            grid-template-columns: 28px 1fr;
+            gap: 10px;
+            align-items: start;
+        }
+        .hero-check strong {
+            display: block;
+            color: #0f172a;
+            font-size: 0.95rem;
+        }
+        .hero-check span {
+            color: #64748b;
+            font-size: 0.88rem;
+            line-height: 1.45;
+        }
+        .hero-dot {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #0f766e, #0ea5e9);
+            color: white;
+            font-size: 0.85rem;
+            font-weight: 700;
+        }
+        .landing-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 16px;
+            margin-top: 4px;
         }
         .premium-strip {
             display: grid;
@@ -164,12 +290,79 @@ def _inject_premium_css(st) -> None:
             color: #0f172a;
         }
         .premium-note {
-            background: linear-gradient(180deg, #fefce8 0%, #fff7cc 100%);
-            border: 1px solid rgba(202, 138, 4, 0.16);
-            border-radius: 18px;
-            padding: 14px 16px;
+            background: linear-gradient(180deg, rgba(255,249,219,0.96) 0%, rgba(255,242,182,0.94) 100%);
+            border: 1px solid rgba(202, 138, 4, 0.14);
+            border-radius: 22px;
+            padding: 16px 18px;
             color: #854d0e;
-            margin: 10px 0 16px 0;
+            margin: 2px 0 6px 0;
+            box-shadow: 0 12px 30px rgba(202, 138, 4, 0.08);
+        }
+        .premium-note strong {
+            display: block;
+            color: #713f12;
+            margin-bottom: 6px;
+            font-size: 0.95rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+        .landing-card {
+            background: rgba(255,255,255,0.9);
+            border: 1px solid rgba(15,23,42,0.07);
+            border-radius: 22px;
+            padding: 18px;
+            box-shadow: 0 14px 34px rgba(15, 23, 42, 0.06);
+        }
+        .landing-card h3 {
+            margin: 0 0 10px 0;
+            color: #0f172a;
+            font-size: 1.05rem;
+        }
+        .landing-card p {
+            margin: 0;
+            color: #64748b;
+            line-height: 1.55;
+            font-size: 0.94rem;
+        }
+        .empty-state {
+            background: linear-gradient(180deg, rgba(248,250,220,0.9) 0%, rgba(241,246,214,0.9) 100%);
+            border: 1px solid rgba(163, 230, 53, 0.14);
+            border-radius: 22px;
+            padding: 18px 20px;
+            box-shadow: 0 12px 28px rgba(132, 204, 22, 0.08);
+            color: #3f6212;
+        }
+        .empty-state strong {
+            display: block;
+            font-size: 1rem;
+            margin-bottom: 6px;
+            color: #365314;
+        }
+        [data-testid="stFileUploader"] {
+            background: rgba(255,255,255,0.72);
+            border: 1px solid rgba(15,23,42,0.08);
+            border-radius: 22px;
+            padding: 8px;
+        }
+        [data-testid="stFileUploaderDropzone"] {
+            border: 1.5px dashed rgba(14, 116, 144, 0.24);
+            border-radius: 18px;
+            background: linear-gradient(180deg, rgba(255,255,255,0.72) 0%, rgba(245,250,255,0.94) 100%);
+        }
+        [data-testid="stFileUploaderDropzone"] * {
+            color: #334155;
+        }
+        [data-testid="stSidebar"] .stButton > button {
+            border-radius: 16px;
+            min-height: 3rem;
+            font-weight: 700;
+            font-size: 1.02rem;
+            box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
+        }
+        [data-testid="stSidebar"] .stRadio label,
+        [data-testid="stSidebar"] .stTextInput label,
+        [data-testid="stSidebar"] .stFileUploader label {
+            color: #334155;
         }
         div[data-testid="stMetric"] {
             background: rgba(255,255,255,0.88);
@@ -177,6 +370,20 @@ def _inject_premium_css(st) -> None:
             padding: 14px 16px;
             border-radius: 18px;
             box-shadow: 0 8px 24px rgba(15,23,42,0.05);
+        }
+        @media (max-width: 1100px) {
+            .hero-grid,
+            .landing-grid,
+            .premium-strip {
+                grid-template-columns: 1fr;
+            }
+            .premium-hero h1 {
+                font-size: 2.3rem;
+            }
+            .block-container {
+                padding-left: 1.2rem;
+                padding-right: 1.2rem;
+            }
         }
         </style>
         """,
@@ -274,6 +481,74 @@ def _extract_pcap_diagnostics(session_df: pd.DataFrame) -> list[dict[str, Any]]:
     return rows
 
 
+def _render_landing_overview(st) -> None:
+    st.markdown(
+        """
+        <div class="premium-shell">
+          <div class="hero-grid">
+            <section class="premium-hero">
+              <div class="hero-kicker">Plateforme de diagnostic V2G</div>
+              <h1>V2G Session Debugger</h1>
+              <p>
+                Analyse multi-sources plus lisible, plus convaincante et plus exploitable:
+                on aligne les logs borne, les PCAP, les acquisitions Dewesoft et les captures
+                pour localiser l'ecart et produire un rapport presentable.
+              </p>
+              <div class="hero-band">
+                <span>Logs borne structurés</span>
+                <span>PCAP interpretés</span>
+                <span>Dewesoft comparé aux consignes</span>
+                <span>Rapport HTML + PDF</span>
+              </div>
+            </section>
+            <div class="hero-aside">
+              <section class="hero-panel">
+                <h3>Ce que l'outil sait faire</h3>
+                <div class="hero-checklist">
+                  <div class="hero-check">
+                    <div class="hero-dot">1</div>
+                    <div><strong>Reconstruire la session</strong><span>Fusion des evenements metier, signaux physiques et indices protocole.</span></div>
+                  </div>
+                  <div class="hero-check">
+                    <div class="hero-dot">2</div>
+                    <div><strong>Identifier le premier ecart</strong><span>Repere le moment ou la consigne, la borne et la mesure ne racontent plus la meme histoire.</span></div>
+                  </div>
+                  <div class="hero-check">
+                    <div class="hero-dot">3</div>
+                    <div><strong>Sortir un verdict motive</strong><span>Cause probable, niveau de confiance, preuves et recommandations client.</span></div>
+                  </div>
+                </div>
+              </section>
+              <section class="hero-panel">
+                <h3>Formats attendus</h3>
+                <p>ZIP de session avec logs, dossiers PCAP, exports Dewesoft CSV, fichiers bruts Dewesoft et captures de support.</p>
+              </section>
+            </div>
+          </div>
+          <div class="premium-note">
+            <strong>Workflow metier</strong>
+            Importer une session, detecter les sources, reconstruire la timeline, correler les preuves, puis formuler un verdict motive exploitable en revue technique ou client.
+          </div>
+          <div class="landing-grid">
+            <section class="landing-card">
+              <h3>Lecture orientee diagnostic</h3>
+              <p>L'interface met en avant le point de depart probable, le premier point de divergence et les regles generiques qui expliquent la conclusion.</p>
+            </section>
+            <section class="landing-card">
+              <h3>Preuves reseau et energie</h3>
+              <p>Les PCAP remontent des marqueurs V2G, des ports, des resets TCP et du HomePlug/SLAC. Les mesures Dewesoft servent de reference physique.</p>
+            </section>
+            <section class="landing-card">
+              <h3>Rapport presentable</h3>
+              <p>Le tableau de bord et les exports HTML/PDF sont pensés pour servir de base a une vraie restitution, pas seulement a un debug brut.</p>
+            </section>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def run_streamlit_app() -> None:
     try:
         import streamlit as st
@@ -286,25 +561,7 @@ def run_streamlit_app() -> None:
 
     st.set_page_config(page_title="V2G Session Debugger", layout="wide")
     _inject_premium_css(st)
-
-    st.markdown(
-        """
-        <div class="premium-hero">
-          <h1>V2G Session Debugger</h1>
-          <p>Analyse multi-sources premium pour reconstituer la session, localiser l'ecart et produire un rapport exploitable en HTML et PDF.</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        """
-        <div class="premium-note">
-          Workflow metier: importer une session avec logs, PCAP, captures et mesures Dewesoft,
-          reconstruire la timeline, correler les sources puis formuler un verdict motive.
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    _render_landing_overview(st)
 
     if "analysis" not in st.session_state:
         st.session_state.analysis = None
@@ -382,7 +639,16 @@ def run_streamlit_app() -> None:
 
     analysis = st.session_state.analysis
     if analysis is None:
-        st.warning("Aucune analyse disponible. Chargez une session puis cliquez sur Analyser la session.")
+        st.markdown(
+            """
+            <div class="empty-state">
+              <strong>Aucune analyse disponible</strong>
+              Chargez une session a gauche, puis lancez l'analyse pour afficher le verdict,
+              les preuves inter-sources, le diagnostic PCAP et les rapports exportables.
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
         return
 
     session_df: pd.DataFrame = analysis["session_df"]
