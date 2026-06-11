@@ -6,13 +6,24 @@ import pandas as pd
 import plotly.graph_objects as go
 
 
-SIGNALS = ["Ptarget", "P_meter", "P_dewesoft", "Qtarget", "Q_meter", "Q_dewesoft", "U_meter", "U_dewesoft", "frequency_meter", "frequency_dewesoft"]
+SIGNALS = [
+    "Ptarget",
+    "P_meter",
+    "P_dewesoft",
+    "Qtarget",
+    "Q_meter",
+    "Q_dewesoft",
+    "U_meter",
+    "U_dewesoft",
+    "frequency_meter",
+    "frequency_dewesoft",
+]
 
 
-def build_signal_figure(timeseries: pd.DataFrame) -> go.Figure:
+def build_signal_figure(timeseries: pd.DataFrame, first_divergence: dict | None = None) -> go.Figure:
     fig = go.Figure()
     if timeseries.empty:
-        fig.update_layout(title="Aucune donnée temporelle disponible")
+        fig.update_layout(title="Aucune donnee temporelle disponible")
         return fig
 
     for signal in SIGNALS:
@@ -31,5 +42,22 @@ def build_signal_figure(timeseries: pd.DataFrame) -> go.Figure:
         for ts in events["timestamp"].dropna().head(50):
             fig.add_vline(x=ts, line_width=1, line_dash="dot", line_color="gray")
 
-    fig.update_layout(title="Graphes comparatifs (target vs meter vs dewesoft)", xaxis_title="Temps", yaxis_title="Valeur")
+    divergence_ts = None
+    if first_divergence and first_divergence.get("timestamp"):
+        divergence_ts = pd.to_datetime(first_divergence["timestamp"], utc=True, errors="coerce")
+    if divergence_ts is not None and pd.notna(divergence_ts):
+        fig.add_vline(
+            x=divergence_ts,
+            line_width=3,
+            line_dash="dash",
+            line_color="red",
+            annotation_text="Premier ecart",
+            annotation_position="top right",
+        )
+
+    fig.update_layout(
+        title="Graphes comparatifs (target vs meter vs dewesoft)",
+        xaxis_title="Temps",
+        yaxis_title="Valeur",
+    )
     return fig

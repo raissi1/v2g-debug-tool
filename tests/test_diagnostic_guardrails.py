@@ -46,6 +46,8 @@ def test_structured_evidence_table_is_present() -> None:
     result = run_diagnostic(frame)
     assert "evidence_table" in result
     assert isinstance(result["evidence_table"], list)
+    assert "first_divergence" in result
+    assert isinstance(result["first_divergence"], dict)
 
 
 def test_raw_dewesoft_is_not_reported_as_absent() -> None:
@@ -65,3 +67,33 @@ def test_raw_dewesoft_is_not_reported_as_absent() -> None:
     )
     result = run_diagnostic(frame)
     assert "brut" in result["justification"].lower() or any("brut" in item.lower() for item in result["evidence"])
+
+
+def test_first_divergence_detects_setpoint_mismatch() -> None:
+    frame = pd.DataFrame(
+        [
+            {
+                "timestamp": "2026-01-01T00:00:00Z",
+                "source": "EnergyManager.log",
+                "event_type": "setpoint",
+                "message": "setpoint Ptarget=10000",
+                "payload": {"source_group": "energy_manager"},
+                "Ptarget": 10000.0,
+            },
+            {
+                "timestamp": "2026-01-01T00:00:01Z",
+                "source": "meter.log",
+                "event_type": "measurement",
+                "message": "meter power sample",
+                "payload": {"source_group": "meter_dispatcher"},
+                "P": 5000.0,
+                "U": 230.0,
+                "frequency": 50.0,
+            },
+        ]
+    )
+
+    result = run_diagnostic(frame)
+    divergence = result["first_divergence"]
+    assert divergence["category"] == "consigne_non_suivie"
+    assert divergence["timestamp"] is not None

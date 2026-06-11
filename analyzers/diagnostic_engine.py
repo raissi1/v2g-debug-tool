@@ -6,6 +6,7 @@ import re
 
 import pandas as pd
 
+from analyzers.divergence_detector import detect_first_divergence
 from analyzers.source_comparison import compare_sources as compare_sources_weighted
 
 
@@ -297,6 +298,15 @@ def run_diagnostic(session_df: pd.DataFrame) -> dict:
             "source": None,
             "reason": "Point de depart du probleme non determine.",
         },
+        "first_divergence": {
+            "timestamp": None,
+            "source": None,
+            "event_type": None,
+            "category": "indetermine",
+            "severity": "low",
+            "reason": "Aucun point de divergence net n'a ete determine.",
+            "evidence": {},
+        },
     }
 
     if simplified.empty:
@@ -315,6 +325,7 @@ def run_diagnostic(session_df: pd.DataFrame) -> dict:
     result["missing_data"] = missing
 
     cross = compare_sources(session_df)
+    first_divergence = detect_first_divergence(session_df, cross)
     scores = cross.get("scores", {})
     evidence_table = cross.get("evidence_table", [])
     issues: list[str] = []
@@ -421,6 +432,7 @@ def run_diagnostic(session_df: pd.DataFrame) -> dict:
         result["evidence"].append("Ecart consigne/mesure observe, mais preuves encore trop faibles pour conclure.")
 
     result["issue_origin"] = _find_issue_origin(simplified, cross, result["best_lead"])
+    result["first_divergence"] = first_divergence
 
     blocks = _build_reasoning_blocks(simplified, issues)
     result["issues"] = issues
@@ -453,6 +465,11 @@ def run_diagnostic(session_df: pd.DataFrame) -> dict:
         if issue_origin.get("timestamp") or issue_origin.get("source")
         else issue_origin.get("reason")
     )
+    divergence_text = (
+        f"Premier point de divergence: {first_divergence.get('timestamp')} ({first_divergence.get('source')}) - {first_divergence.get('reason')}"
+        if first_divergence.get("timestamp") or first_divergence.get("source")
+        else first_divergence.get("reason")
+    )
 
     result["executive_summary"] = (
         f"Cause probable: {_label_cause(result['cause_probable'])}. "
@@ -462,6 +479,7 @@ def run_diagnostic(session_df: pd.DataFrame) -> dict:
         f"Preuves: {', '.join(cross.get('insights', [])[:3]) if cross.get('insights') else 'aucune forte'}. "
         f"Dewesoft: {dew_line} "
         f"{origin_text}. "
+        f"{divergence_text}. "
         f"Recommandation: {recommendation}"
     )
 

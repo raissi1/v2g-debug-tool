@@ -82,6 +82,7 @@ def generate_pdf_report(
     confidence = diagnostic.get("confidence", "Faible")
     confidence_score = diagnostic.get("confidence_score", 0)
     issue_origin = diagnostic.get("issue_origin", {}) or {}
+    first_divergence = diagnostic.get("first_divergence", {}) or {}
     cross = diagnostic.get("cross_analysis", {}) or {}
 
     story.append(Paragraph("Rapport d'analyse V2G", styles["CoverTitle"]))
@@ -101,10 +102,21 @@ def generate_pdf_report(
     story.append(Paragraph(origin_text, styles["BodyText"]))
     story.append(Paragraph(f"Piste principale: {_label_cause(diagnostic.get('best_lead', 'indetermine'))}", styles["BodyText"]))
     story.append(Paragraph(diagnostic.get("best_lead_reason", ""), styles["BodyText"]))
+    story.append(Spacer(1, 6))
+    story.append(Paragraph("Premier point de divergence", styles["SubTitle"]))
+    divergence_text = first_divergence.get("reason", "Aucun point de divergence net n'a ete determine.")
+    if first_divergence.get("timestamp") or first_divergence.get("source"):
+        divergence_text = (
+            f"{first_divergence.get('timestamp')} - {first_divergence.get('source')} - "
+            f"{first_divergence.get('category')} - {divergence_text}"
+        )
+    story.append(Paragraph(divergence_text, styles["BodyText"]))
     story.append(Spacer(1, 8))
 
     story.append(Paragraph("Sources detectees", styles["SectionTitle"]))
     if detected_summary:
+        coverage = detected_summary.get("coverage", {})
+        dewesoft_coverage = coverage.get("dewesoft", {})
         file_lines = [
             f"EnergyManager: {len(detected_summary.get('energy_manager', []))} fichier(s)",
             f"ChargerApp: {len(detected_summary.get('charger_app', []))} fichier(s)",
@@ -114,6 +126,13 @@ def generate_pdf_report(
             f"Dewesoft brut (.d7d/.dxd/.dmd): {len(detected_summary.get('dewesoft_raw', []))} fichier(s)",
             f"Captures / images: {len(detected_summary.get('supporting_images', []))} fichier(s)",
         ]
+        if dewesoft_coverage:
+            file_lines.append(
+                "Statut Dewesoft: "
+                f"{dewesoft_coverage.get('csv_ready', 0)} CSV prets, "
+                f"{dewesoft_coverage.get('sidecar_csv', 0)} bruts associes a un CSV, "
+                f"{dewesoft_coverage.get('conversion_required', 0)} conversions requises"
+            )
         story.extend(_bullet_paragraphs(file_lines, styles["BodySmall"]))
     else:
         story.append(Paragraph("Detection des fichiers non fournie.", styles["BodyText"]))

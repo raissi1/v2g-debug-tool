@@ -51,6 +51,28 @@ def test_raw_dewesoft_prefers_sidecar_csv_when_present() -> None:
         assert converted == csv
 
 
+def test_detected_summary_exposes_dewesoft_coverage_statuses() -> None:
+    with TemporaryDirectory() as td:
+        root = Path(td)
+        acquisitions = root / "Aquisitions"
+        acquisitions.mkdir()
+        csv = acquisitions / "Primara_1.csv"
+        raw_with_csv = acquisitions / "Primara_1.dmd"
+        raw_without_csv = acquisitions / "Primara_2.d7d"
+        csv.write_text("time,P\n0,1\n")
+        raw_with_csv.write_text("x")
+        raw_without_csv.write_text("x")
+
+        detected = detect_session_files(root)
+        summary = detected.to_summary()
+
+        coverage = summary["coverage"]["dewesoft"]
+        assert coverage["csv_ready"] == 1
+        assert coverage["sidecar_csv"] == 1
+        assert coverage["conversion_required"] == 1
+        assert len(summary["asset_statuses"]) == 3
+
+
 def test_compare_sources_builds_cross_insights() -> None:
     frame = pd.DataFrame(
         [

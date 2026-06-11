@@ -51,6 +51,16 @@ def _build_file_summary(detected_summary: dict | None) -> list[str]:
         return ["Detection des fichiers non fournie."]
 
     pcap_total = len(detected_summary.get("netlogger_pcaps", [])) + len(detected_summary.get("generic_pcaps", []))
+    coverage = detected_summary.get("coverage", {})
+    dewesoft_coverage = coverage.get("dewesoft", {})
+    dewesoft_status_line = (
+        "Statut Dewesoft: "
+        f"{dewesoft_coverage.get('csv_ready', 0)} CSV prets, "
+        f"{dewesoft_coverage.get('sidecar_csv', 0)} bruts associes a un CSV, "
+        f"{dewesoft_coverage.get('conversion_required', 0)} conversions requises"
+        if dewesoft_coverage
+        else "Statut Dewesoft detaille non disponible."
+    )
     return [
         f"EnergyManager: {len(detected_summary.get('energy_manager', []))} fichier(s)",
         f"ChargerApp: {len(detected_summary.get('charger_app', []))} fichier(s)",
@@ -62,6 +72,7 @@ def _build_file_summary(detected_summary: dict | None) -> list[str]:
         f"Mesures Dewesoft CSV: {len(detected_summary.get('dewesoft_csv', []))} fichier(s)",
         f"Mesures Dewesoft brutes (.d7d/.dxd/.dmd): {len(detected_summary.get('dewesoft_raw', []))} fichier(s)",
         f"Captures et images de support: {len(detected_summary.get('supporting_images', []))} fichier(s)",
+        dewesoft_status_line,
     ]
 
 
@@ -230,6 +241,7 @@ def generate_html_report(
     best_lead = _label_cause(diagnostic.get("best_lead", "indetermine"))
     best_lead_reason = str(diagnostic.get("best_lead_reason", ""))
     issue_origin = diagnostic.get("issue_origin", {}) or {}
+    first_divergence = diagnostic.get("first_divergence", {}) or {}
 
     requested_lines = blocks.get("A_requested", [])
     station_lines = blocks.get("B_station_computed", [])
@@ -670,6 +682,24 @@ def generate_html_report(
                 <p>{escape(str(issue_origin.get("reason") or "Point de depart du probleme non determine."))}</p>
                 <p><b>Piste principale:</b> {escape(best_lead)}</p>
                 <p>{escape(best_lead_reason)}</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <h2>Premier point de divergence</h2>
+            <div class="two-col">
+              <div class="summary-box">
+                <strong>Moment de bascule detecte</strong>
+                <p>
+                  {escape(str(first_divergence.get("timestamp") or "Horodatage non determine"))}<br>
+                  {escape(str(first_divergence.get("source") or "Source non determinee"))}<br>
+                  Categorie: {escape(str(first_divergence.get("category") or "indetermine"))}
+                </p>
+              </div>
+              <div class="summary-box">
+                <strong>Interpretation</strong>
+                <p>{escape(str(first_divergence.get("reason") or "Aucun point de divergence net n'a ete determine."))}</p>
               </div>
             </div>
           </section>

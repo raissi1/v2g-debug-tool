@@ -211,6 +211,8 @@ def _render_overview_strip(st, detected_summary: dict) -> None:
 
 def _render_detected_files(st, detected_summary: dict) -> None:
     pcap_total = len(detected_summary.get("netlogger_pcaps", [])) + len(detected_summary.get("generic_pcaps", []))
+    coverage = detected_summary.get("coverage", {})
+    dewesoft_coverage = coverage.get("dewesoft", {})
     st.write(f"EnergyManager: **{len(detected_summary.get('energy_manager', []))}**")
     st.write(f"ChargerApp: **{len(detected_summary.get('charger_app', []))}**")
     st.write(f"iotc-meter-dispatcher: **{len(detected_summary.get('iotc_meter_dispatcher', []))}**")
@@ -218,6 +220,13 @@ def _render_detected_files(st, detected_summary: dict) -> None:
     st.write(f"Mesures Dewesoft CSV: **{len(detected_summary.get('dewesoft_csv', []))}**")
     st.write(f"Mesures Dewesoft brutes (.d7d/.dxd/.dmd): **{len(detected_summary.get('dewesoft_raw', []))}**")
     st.write(f"Captures et images detectees: **{len(detected_summary.get('supporting_images', []))}**")
+    if dewesoft_coverage:
+        st.write(
+            "Statut Dewesoft: "
+            f"**{dewesoft_coverage.get('csv_ready', 0)} CSV prets**, "
+            f"**{dewesoft_coverage.get('sidecar_csv', 0)} bruts associes a un CSV**, "
+            f"**{dewesoft_coverage.get('conversion_required', 0)} a convertir**"
+        )
     if detected_summary.get("dewesoft_raw", []) and not detected_summary.get("dewesoft_csv", []):
         st.warning("Dewesoft brut detecte: present dans la session, mais conversion CSV requise pour exploiter les mesures.")
 
@@ -389,6 +398,7 @@ def run_streamlit_app() -> None:
         st.write(diagnostic.get("executive_summary", ""))
         st.markdown("### Point de depart probable")
         issue_origin = diagnostic.get("issue_origin", {}) or {}
+        first_divergence = diagnostic.get("first_divergence", {}) or {}
         lead_label = _label_cause(diagnostic.get("best_lead", "indetermine"))
         st.write(f"Piste a verifier d'abord: **{lead_label}**")
         st.write(diagnostic.get("best_lead_reason", ""))
@@ -397,6 +407,13 @@ def run_streamlit_app() -> None:
             f"Source: **{issue_origin.get('source') or 'non determinee'}**"
         )
         st.write(issue_origin.get("reason", "Point de depart du probleme non determine."))
+        st.markdown("### Premier point de divergence")
+        st.write(
+            f"Horodatage: **{first_divergence.get('timestamp') or 'non determine'}** | "
+            f"Source: **{first_divergence.get('source') or 'non determinee'}** | "
+            f"Categorie: **{first_divergence.get('category') or 'indetermine'}**"
+        )
+        st.write(first_divergence.get("reason", "Aucun point de divergence net n'a ete determine."))
 
         st.markdown("### Resume automatique")
         if session_df.empty:
@@ -468,7 +485,7 @@ def run_streamlit_app() -> None:
             ]
         )
         if has_measure:
-            st.plotly_chart(build_signal_figure(timeseries), width="stretch")
+            st.plotly_chart(build_signal_figure(timeseries, diagnostic.get("first_divergence")), width="stretch")
         else:
             st.info("Aucune mesure exploitable detectee. Importez un export CSV Dewesoft pour activer les graphes physiques.")
 
