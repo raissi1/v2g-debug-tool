@@ -71,6 +71,28 @@ def _extract_physical_signals(line: str) -> dict[str, float | str]:
             signals["state"] = state_name
             break
 
+    if "limitsgranted" in line.lower() or "declare limit" in line.lower() or "limit declaration request" in line.lower():
+        discharge_power = re.search(r"Discharge:\s*\{[^}]*maxPower_W\s*\([^)]*\):\s*([-+]?\d+(?:[\.,]\d+)?)", line, re.IGNORECASE)
+        charge_power = re.search(r"Charge:\s*\{[^}]*maxPower_W\s*\([^)]*\):\s*([-+]?\d+(?:[\.,]\d+)?)", line, re.IGNORECASE)
+        current_ma = re.search(r"maxCurrent(?:Ph1)?_mA\s*\([^)]*\):\s*([-+]?\d+(?:[\.,]\d+)?)", line, re.IGNORECASE)
+        if discharge_power:
+            signals["AvailableDischargePower"] = _to_float(discharge_power.group(1))
+        if charge_power:
+            signals["AvailableChargePower"] = _to_float(charge_power.group(1))
+        if current_ma:
+            signals["maxCurrent_mA"] = _to_float(current_ma.group(1))
+
+    setpoint_pub = re.search(r"Setpoint published:.*\bP:\s*\{[^}]*power_W:\s*([-+]?\d+(?:[\.,]\d+)?)", line, re.IGNORECASE)
+    reactive_pub = re.search(r"Setpoint published:.*\bQ:\s*\{[^}]*power_W:\s*([-+]?\d+(?:[\.,]\d+)?)", line, re.IGNORECASE)
+    if setpoint_pub:
+        signals["Ptarget"] = _to_float(setpoint_pub.group(1))
+    if reactive_pub:
+        signals["Qtarget"] = _to_float(reactive_pub.group(1))
+
+    recalc_limit = re.search(r"Limits changed, recalculating.*Power\s*\(W\)\s*([-+]?\d+(?:[\.,]\d+)?)", line, re.IGNORECASE)
+    if recalc_limit:
+        signals["Pcalc"] = _to_float(recalc_limit.group(1))
+
     return signals
 
 
@@ -79,7 +101,7 @@ def _physical_event_type(signals: dict[str, float | str]) -> str | None:
         return "state_change"
     if "Ptarget" in signals or "Qtarget" in signals:
         return "setpoint"
-    if any(k in signals for k in ("Smax", "derating", "Pcalc", "Qcalc")):
+    if any(k in signals for k in ("Smax", "derating", "Pcalc", "Qcalc", "AvailableDischargePower", "AvailableChargePower", "maxCurrent_mA")):
         return "power_limit"
     if any(k in signals for k in ("P", "Q", "U", "AvailableDischargePower")):
         return "physical_measurement"

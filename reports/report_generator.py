@@ -242,6 +242,8 @@ def generate_html_report(
     best_lead_reason = str(diagnostic.get("best_lead_reason", ""))
     issue_origin = diagnostic.get("issue_origin", {}) or {}
     first_divergence = diagnostic.get("first_divergence", {}) or {}
+    generic_rules = diagnostic.get("generic_rules", []) or []
+    generic_rule_summary = diagnostic.get("generic_rule_summary", {}) or {}
 
     requested_lines = blocks.get("A_requested", [])
     station_lines = blocks.get("B_station_computed", [])
@@ -309,6 +311,12 @@ def generate_html_report(
         ["timestamp", "source", "type", "extracted_value", "impact", "weight", "comment"],
         "Aucune preuve structuree.",
         limit=300,
+    )
+    generic_rules_html = _to_table_html(
+        pd.DataFrame(generic_rules),
+        ["title", "category", "status", "severity", "expected", "observed", "reason", "timestamp", "source"],
+        "Aucune regle generique evaluee.",
+        limit=100,
     )
 
     return f"""
@@ -758,6 +766,21 @@ def generate_html_report(
                 <ul>{_to_list_html(diagnostic.get("missing_data", []), empty_label="Aucune donnee critique manquante detectee")}</ul>
               </div>
             </div>
+          </section>
+
+          <section class="panel">
+            <h2>Regles d'analyse generiques</h2>
+            <p>
+              Cette section formalise les constats reutilisables du moteur generique:
+              regles attendues, observations, severite et statut.
+            </p>
+            <div style="margin-bottom: 10px;">
+              <span class="tag">Pass: {escape(str(generic_rule_summary.get("pass", 0)))}</span>
+              <span class="tag warn">Warn: {escape(str(generic_rule_summary.get("warn", 0)))}</span>
+              <span class="tag info">Fail: {escape(str(generic_rule_summary.get("fail", 0)))}</span>
+              <span class="tag">Unknown: {escape(str(generic_rule_summary.get("unknown", 0)))}</span>
+            </div>
+            {generic_rules_html}
           </section>
 
           <section class="panel">

@@ -102,8 +102,10 @@ def _extract_physical_signals(line: str) -> dict[str, float | str]:
                 data = None
 
         if data:
+            values = data.get("values") if isinstance(data.get("values"), dict) else data
+
             def _num(key: str) -> float | None:
-                raw = data.get(key)
+                raw = values.get(key) if isinstance(values, dict) else None
                 if raw is None:
                     return None
                 return _to_float(str(raw))
@@ -169,6 +171,11 @@ def _extract_physical_signals(line: str) -> dict[str, float | str]:
             if f_mhz is not None:
                 signals["frequency_Hz"] = millihertz_to_hertz(f_mhz)
                 signals["frequency"] = signals["frequency_Hz"]
+
+            if isinstance(data.get("source"), str):
+                signals["meter_source"] = data["source"]
+            if isinstance(data.get("timestamp"), (int, float, str)):
+                signals["meter_timestamp_raw"] = str(data["timestamp"])
 
             signals["is_slice_measurement"] = True
 

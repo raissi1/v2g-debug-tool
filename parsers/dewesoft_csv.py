@@ -12,9 +12,9 @@ from core.models import Event
 
 def _load_csv(path: Path) -> pd.DataFrame:
     attempts = [
-        {"sep": ";", "decimal": ",", "quotechar": '"'},
-        {"sep": ",", "decimal": ".", "quotechar": '"'},
-        {"sep": None, "engine": "python"},
+        {"sep": ";", "decimal": ",", "quotechar": '"', "low_memory": False},
+        {"sep": ",", "decimal": ".", "quotechar": '"', "low_memory": False},
+        {"sep": None, "engine": "python", "low_memory": False},
     ]
     for options in attempts:
         try:
@@ -23,7 +23,23 @@ def _load_csv(path: Path) -> pd.DataFrame:
                 return frame
         except Exception:
             continue
-    return pd.read_csv(path)
+    return pd.read_csv(path, low_memory=False)
+
+
+def _canonicalize_column_name(column: object) -> str:
+    text = str(column).strip().lower()
+    text = re.sub(r"[%\[\]\(\)]", "", text)
+    text = re.sub(r"[^a-z0-9]+", "_", text)
+    return text.strip("_")
+
+
+def _find_exact_column(columns: list[str], candidates: tuple[str, ...]) -> str | None:
+    exact = {_canonicalize_column_name(column): column for column in columns}
+    for candidate in candidates:
+        found = exact.get(candidate)
+        if found is not None:
+            return found
+    return None
 
 
 def _find_column(columns: list[str], candidates: tuple[str, ...]) -> str | None:
@@ -71,12 +87,65 @@ def parse_dewesoft_csv(path: Path) -> tuple[list[Event], pd.DataFrame]:
         return [], pd.DataFrame()
 
     cols = list(frame.columns)
-    ts_col = _find_column(cols, (r"\btime\b", r"timestamp", r"\bdate\b", r"temps"))
-    p_col = _find_column(cols, (r"power[_\s]*active", r"\bp[_\s]*w\b", r"\bp[_a-z0-9@/\s\[\]-]*\[w\]", r"^\s*p[_@]", r"puissance[_\s]*active"))
-    q_col = _find_column(cols, (r"power[_\s]*reactive", r"\bq[_\s]*var\b", r"\bq[_a-z0-9@/\s\[\]-]*\[var\]", r"^\s*q[_@]", r"reactive", r"puissance[_\s]*reactive"))
-    u_col = _find_column(cols, (r"voltage", r"tension", r"\bu[_\s]*v\b", r"\bu[123]?[_a-z0-9@/\s\[\]-]*\[v\]", r"^u[123]?_"))
-    f_col = _find_column(cols, (r"freq", r"frequency", r"\bf[_a-z0-9@/\s\[\]-]*\[hz\]", r"^f[_@]"))
-    i_col = _find_column(cols, (r"current", r"courant", r"\bi[_\s]*a\b", r"\bi[123]?[_a-z0-9@/\s\[\]-]*\[a\]", r"^i[123]?_"))
+    ts_col = _find_exact_column(cols, ("time", "timestamp", "date", "temps")) or _find_column(
+        cols, (r"\btime\b", r"timestamp", r"\bdate\b", r"temps")
+    )
+    p_col = _find_exact_column(cols, ("p", "active_power", "power_active", "puissance_active")) or _find_column(
+        cols,
+        (
+            r"power[_\s]*active",
+            r"\bp[_\s]*w\b",
+            r"\bp[_a-z0-9@/\s\[\]-]*\[w\]",
+            r"^\s*p[_@]",
+            r"puissance[_\s]*active",
+        ),
+    )
+    q_col = _find_exact_column(cols, ("q", "reactive_power", "power_reactive", "puissance_reactive")) or _find_column(
+        cols,
+        (
+            r"power[_\s]*reactive",
+            r"\bq[_\s]*var\b",
+            r"\bq[_a-z0-9@/\s\[\]-]*\[var\]",
+            r"^\s*q[_@]",
+            r"reactive",
+            r"puissance[_\s]*reactive",
+        ),
+    )
+    u_col = _find_exact_column(
+        cols,
+        (
+            "u",
+            "u_v",
+            "u_rms",
+            "u_rm",
+            "u_rms_l1",
+            "u_rm_l1",
+            "ul1",
+            "voltage",
+            "tension",
+        ),
+    ) or _find_column(cols, (r"voltage", r"tension", r"\bu[_\s]*v\b", r"\bu[123]?[_a-z0-9@/\s\[\]-]*\[v\]", r"^u[123]?_"))
+    f_col = _find_exact_column(cols, ("frequency", "freq", "f", "frequency_hz")) or _find_column(
+        cols, (r"freq", r"frequency", r"\bf[_a-z0-9@/\s\[\]-]*\[hz\]", r"^f[_@]")
+    )
+    i_col = _find_exact_column(
+        cols,
+        (
+            "i",
+            "i_a",
+            "i_rms",
+            "i_rm",
+            "i_rms_l1",
+            "i_rm_l1",
+            "il1",
+            "il1_rms",
+            "current",
+            "courant",
+        ),
+    ) or _find_column(cols, (r"current", r"courant", r"\bi[_\s]*a\b", r"\bi[123]?[_a-z0-9@/\s\[\]-]*\[a\]", r"^i[123]?_"))
+    s_col = _find_exact_column(cols, ("s", "apparent_power", "power_apparent", "puissance_apparente")) or _find_column(
+        cols, (r"apparent", r"\bs[_\s]*va\b", r"^\s*s[_@]", r"puissance[_\s]*apparente")
+    )
 
     timestamp_series = _build_timestamp_series(frame, ts_col, path)
 
@@ -114,6 +183,8 @@ def parse_dewesoft_csv(path: Path) -> tuple[list[Event], pd.DataFrame]:
         if i_col is not None:
             payload["I_A"] = _num(row.get(i_col))
             payload["I_dewesoft_A"] = payload["I_A"]
+        if s_col is not None:
+            payload["S_VA"] = _num(row.get(s_col))
 
         events.append(
             Event(
@@ -142,6 +213,7 @@ def parse_dewesoft_csv(path: Path) -> tuple[list[Event], pd.DataFrame]:
             "frequency_dewesoft_Hz": frame[f_col].map(_num) if f_col else pd.NA,
             "I_A": frame[i_col].map(_num) if i_col else pd.NA,
             "I_dewesoft_A": frame[i_col].map(_num) if i_col else pd.NA,
+            "S_VA": frame[s_col].map(_num) if s_col else pd.NA,
             "source": path.name,
         }
     )

@@ -84,6 +84,8 @@ def generate_pdf_report(
     issue_origin = diagnostic.get("issue_origin", {}) or {}
     first_divergence = diagnostic.get("first_divergence", {}) or {}
     cross = diagnostic.get("cross_analysis", {}) or {}
+    generic_rules = diagnostic.get("generic_rules", []) or []
+    generic_rule_summary = diagnostic.get("generic_rule_summary", {}) or {}
 
     story.append(Paragraph("Rapport d'analyse V2G", styles["CoverTitle"]))
     story.append(Paragraph(f"Verdict principal: <b>{_label_cause(cause)}</b>", styles["BodyText"]))
@@ -162,6 +164,23 @@ def generate_pdf_report(
     story.append(Spacer(1, 8))
     story.append(Paragraph("Donnees manquantes", styles["SubTitle"]))
     story.extend(_bullet_paragraphs(diagnostic.get("missing_data", []), styles["BodySmall"], empty_label="Aucune donnee critique manquante detectee"))
+    story.append(Spacer(1, 10))
+
+    story.append(Paragraph("Regles d'analyse generiques", styles["SectionTitle"]))
+    story.append(
+        Paragraph(
+            f"Pass={generic_rule_summary.get('pass', 0)} | Warn={generic_rule_summary.get('warn', 0)} | "
+            f"Fail={generic_rule_summary.get('fail', 0)} | Unknown={generic_rule_summary.get('unknown', 0)}",
+            styles["BodyText"],
+        )
+    )
+    story.append(
+        _frame_to_table(
+            pd.DataFrame(generic_rules),
+            ["title", "category", "status", "severity", "expected", "observed", "reason", "timestamp", "source"],
+            "Aucune regle generique evaluee.",
+        )
+    )
     story.append(Spacer(1, 10))
 
     story.append(Paragraph("Table comparative", styles["SectionTitle"]))

@@ -34,3 +34,20 @@ def test_slice_parser_keeps_zero_values_and_converts_units() -> None:
     assert signals["frequency_Hz"] == 50.06
     assert signals["is_slice_measurement"] is True
 
+
+def test_slice_parser_supports_nested_values_payload() -> None:
+    line = (
+        '2026-01-01T00:00:00Z Slice: {"source":"Power Board Meter","timestamp":1773310573850928,'
+        '"values":{"VOLTAGE_RMS_mV":230503,"CURRENT_RMS_mA":0,"POWER_ACTIVE_W":0,'
+        '"POWER_REACTIVE_var":0,"POWER_APPARENT_VA":0,"FREQUENCY_mHz":50040}}'
+    )
+    signals = _extract_physical_signals(line)
+
+    assert signals["P"] == 0.0
+    assert signals["Q"] == 0.0
+    assert signals["S"] == 0.0
+    assert signals["U_V"] == 230.503
+    assert signals["I_A"] == 0.0
+    assert signals["frequency_Hz"] == 50.04
+    assert signals["meter_source"] == "Power Board Meter"
+

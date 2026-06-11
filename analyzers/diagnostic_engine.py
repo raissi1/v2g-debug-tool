@@ -7,6 +7,7 @@ import re
 import pandas as pd
 
 from analyzers.divergence_detector import detect_first_divergence
+from analyzers.generic_rule_engine import evaluate_generic_rules
 from analyzers.source_comparison import compare_sources as compare_sources_weighted
 
 
@@ -307,6 +308,8 @@ def run_diagnostic(session_df: pd.DataFrame) -> dict:
             "reason": "Aucun point de divergence net n'a ete determine.",
             "evidence": {},
         },
+        "generic_rules": [],
+        "generic_rule_summary": {"pass": 0, "fail": 0, "warn": 0, "unknown": 0},
     }
 
     if simplified.empty:
@@ -331,6 +334,9 @@ def run_diagnostic(session_df: pd.DataFrame) -> dict:
     issues: list[str] = []
 
     dew_status = _dewesoft_status(simplified)
+    generic_rule_eval = evaluate_generic_rules(simplified, cross, dew_status)
+    result["generic_rules"] = generic_rule_eval.get("rules", [])
+    result["generic_rule_summary"] = generic_rule_eval.get("summary", result["generic_rule_summary"])
 
     vehicle_signal = False
     setpoints = simplified[simplified[["Ptarget", "Qtarget"]].notna().any(axis=1)].dropna(subset=["Ptarget"])
@@ -425,6 +431,14 @@ def run_diagnostic(session_df: pd.DataFrame) -> dict:
         result["justification"] += " Dewesoft CSV non exploite: confiance abaissee pour une conclusion cote vehicule."
         result["evidence"].append("Absence de Dewesoft CSV exploitable: rester prudent pour une conclusion cote vehicule.")
 
+    failed_rules = [rule for rule in result["generic_rules"] if rule.get("status") == "fail"]
+    warn_rules = [rule for rule in result["generic_rules"] if rule.get("status") == "warn"]
+    for rule in failed_rules[:3]:
+        issues.append(f"{rule.get('title')}: {rule.get('reason')}")
+        result["evidence"].append(f"{rule.get('title')}: {rule.get('observed')}")
+    for rule in warn_rules[:2]:
+        issues.append(f"{rule.get('title')}: {rule.get('reason')}")
+
     if not issues:
         issues.append("Aucune anomalie majeure detectee par les regles actuelles.")
 
@@ -475,6 +489,9 @@ def run_diagnostic(session_df: pd.DataFrame) -> dict:
         f"Cause probable: {_label_cause(result['cause_probable'])}. "
         f"Piste principale meme si prudente: {_label_cause(result['best_lead'])}. "
         f"Confiance: {result['confidence']} ({result['confidence_score']}%). "
+        f"Regles generiques: {result['generic_rule_summary'].get('pass', 0)} pass, "
+        f"{result['generic_rule_summary'].get('warn', 0)} avertissements, "
+        f"{result['generic_rule_summary'].get('fail', 0)} ecarts. "
         f"Observation: {observation} "
         f"Preuves: {', '.join(cross.get('insights', [])[:3]) if cross.get('insights') else 'aucune forte'}. "
         f"Dewesoft: {dew_line} "

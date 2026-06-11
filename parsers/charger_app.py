@@ -67,6 +67,35 @@ def _extract_physical_signals(line: str) -> dict[str, float | str]:
             signals["state"] = state_name
             break
 
+    charging_req_p = re.search(r"ChargingStatusReq.*evActivePowerPresent_W:\s*ph1:\s*([-+]?\d+(?:[\.,]\d+)?)", line, re.IGNORECASE)
+    charging_req_q = re.search(r"ChargingStatusReq.*evReactivePowerPresent_W:\s*ph1:\s*([-+]?\d+(?:[\.,]\d+)?)", line, re.IGNORECASE)
+    charge_limit = re.search(r"chargeLimits:.*maxPower_W:\s*\{ph1:\s*([-+]?\d+(?:[\.,]\d+)?)\}", line, re.IGNORECASE)
+    discharge_limit = re.search(r"dischargeLimits:.*maxPower_W:\s*\{ph1:\s*([-+]?\d+(?:[\.,]\d+)?)\}", line, re.IGNORECASE)
+    meter_power = re.search(r"HlcEvents::MeterData,\s*power_W:\s*ph1:\s*([-+]?\d+(?:[\.,]\d+)?)", line, re.IGNORECASE)
+    meter_current = re.search(r"load_mA:\s*ph1:\s*([-+]?\d+(?:[\.,]\d+)?)", line, re.IGNORECASE)
+    meter_voltage = re.search(r"voltage_mV\s*ph1:\s*([-+]?\d+(?:[\.,]\d+)?)", line, re.IGNORECASE)
+
+    if charging_req_p:
+        signals["P"] = _to_float(charging_req_p.group(1))
+        signals["evActivePowerPresent_W"] = signals["P"]
+    if charging_req_q:
+        signals["Q"] = _to_float(charging_req_q.group(1))
+        signals["evReactivePowerPresent_var"] = signals["Q"]
+    if charge_limit:
+        signals["chargeLimitPower_W"] = _to_float(charge_limit.group(1))
+    if discharge_limit:
+        signals["AvailableDischargePower"] = _to_float(discharge_limit.group(1))
+    if meter_power:
+        signals["P"] = _to_float(meter_power.group(1))
+    if meter_current:
+        raw_current = _to_float(meter_current.group(1))
+        if raw_current is not None:
+            signals["I_A"] = raw_current / 1000.0
+    if meter_voltage:
+        raw_voltage = _to_float(meter_voltage.group(1))
+        if raw_voltage is not None:
+            signals["U"] = raw_voltage / 1000.0
+
     return signals
 
 
@@ -75,7 +104,9 @@ def _physical_event_type(signals: dict[str, float | str]) -> str | None:
         return "state_change"
     if "Ptarget" in signals or "Qtarget" in signals:
         return "setpoint"
-    if any(k in signals for k in ("P", "Q", "U", "AvailableDischargePower")):
+    if any(k in signals for k in ("chargeLimitPower_W", "AvailableDischargePower")):
+        return "power_limit"
+    if any(k in signals for k in ("P", "Q", "U", "AvailableDischargePower", "I_A")):
         return "physical_measurement"
     return None
 

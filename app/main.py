@@ -414,6 +414,13 @@ def run_streamlit_app() -> None:
             f"Categorie: **{first_divergence.get('category') or 'indetermine'}**"
         )
         st.write(first_divergence.get("reason", "Aucun point de divergence net n'a ete determine."))
+        st.markdown("### Regles generiques")
+        rule_summary = diagnostic.get("generic_rule_summary", {}) or {}
+        col_r1, col_r2, col_r3, col_r4 = st.columns(4)
+        col_r1.metric("Pass", rule_summary.get("pass", 0))
+        col_r2.metric("Warn", rule_summary.get("warn", 0))
+        col_r3.metric("Fail", rule_summary.get("fail", 0))
+        col_r4.metric("Unknown", rule_summary.get("unknown", 0))
 
         st.markdown("### Resume automatique")
         if session_df.empty:
@@ -531,6 +538,13 @@ def run_streamlit_app() -> None:
             )
         else:
             st.info("Aucune acquisition Dewesoft detectee.")
+
+        st.markdown("### Regles d'analyse generiques")
+        generic_rules = diagnostic.get("generic_rules", []) or []
+        if generic_rules:
+            st.dataframe(pd.DataFrame(generic_rules), width="stretch")
+        else:
+            st.info("Aucune regle generique evaluee.")
 
     with tabs[5]:
         st.subheader("Rapport HTML")

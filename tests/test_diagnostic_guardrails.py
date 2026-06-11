@@ -48,6 +48,10 @@ def test_structured_evidence_table_is_present() -> None:
     assert isinstance(result["evidence_table"], list)
     assert "first_divergence" in result
     assert isinstance(result["first_divergence"], dict)
+    assert "generic_rules" in result
+    assert isinstance(result["generic_rules"], list)
+    assert "generic_rule_summary" in result
+    assert isinstance(result["generic_rule_summary"], dict)
 
 
 def test_raw_dewesoft_is_not_reported_as_absent() -> None:
@@ -97,3 +101,6 @@ def test_first_divergence_detects_setpoint_mismatch() -> None:
     divergence = result["first_divergence"]
     assert divergence["category"] == "consigne_non_suivie"
     assert divergence["timestamp"] is not None
+    setpoint_rule = next(rule for rule in result["generic_rules"] if rule["id"] == "setpoint_following")
+    assert setpoint_rule["status"] == "fail"
+    assert result["generic_rule_summary"]["fail"] >= 1
