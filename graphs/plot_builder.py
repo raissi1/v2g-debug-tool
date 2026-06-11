@@ -51,8 +51,18 @@ def build_signal_figure(timeseries: pd.DataFrame, first_divergence: dict | None 
             line_width=3,
             line_dash="dash",
             line_color="red",
-            annotation_text="Premier ecart",
-            annotation_position="top right",
+        )
+        fig.add_annotation(
+            x=divergence_ts,
+            y=1,
+            xref="x",
+            yref="paper",
+            text="Premier ecart",
+            showarrow=True,
+            arrowhead=2,
+            ax=30,
+            ay=-30,
+            font={"color": "red"},
         )
 
     fig.update_layout(
