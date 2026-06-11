@@ -16,6 +16,7 @@ from parsers.charger_app import parse_charger_app
 from parsers.energy_manager import parse_energy_manager
 from parsers.meter_dispatcher import parse_meter_dispatcher
 from parsers.dewesoft import parse_dewesoft_file
+from parsers.pcap_generic import parse_pcap_file
 
 ISO_TS_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?")
 NUMBER = r"([-+]?\d+(?:[\.,]\d+)?)"
@@ -208,20 +209,7 @@ def _events_from_measure(path: Path) -> Iterable[Event]:
 
 
 def _events_from_pcap(path: Path) -> Iterable[Event]:
-    stat = path.stat()
-    yield Event(
-        timestamp=datetime.fromtimestamp(stat.st_mtime),
-        source=path.name,
-        event_type="protocol_event",
-        message="PCAP detected (binary payload not parsed in generic mode)",
-        payload={
-            "size_bytes": stat.st_size,
-            "path": str(path),
-            "parser": "netlogger",
-            "source_group": "netlogger",
-            "future_diagnostic_side": "to_be_inferred",
-        },
-    )
+    yield from parse_pcap_file(path)
 
 
 def _iter_events_for_log(path: Path) -> Iterable[Event]:

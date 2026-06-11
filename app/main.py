@@ -244,6 +244,36 @@ def _analysis_status_text(step: str) -> str:
     return labels.get(step, "Analyse en cours...")
 
 
+def _extract_pcap_diagnostics(session_df: pd.DataFrame) -> list[dict[str, Any]]:
+    if session_df.empty or "payload" not in session_df.columns:
+        return []
+
+    rows: list[dict[str, Any]] = []
+    for _, row in session_df.iterrows():
+        payload = row.get("payload")
+        if not isinstance(payload, dict):
+            continue
+        if payload.get("parser") != "pcap_generic":
+            continue
+        rows.append(
+            {
+                "timestamp": row.get("timestamp"),
+                "source": row.get("source"),
+                "message": row.get("message"),
+                "packets": payload.get("pcap_packet_count"),
+                "linktype": payload.get("pcap_link_type"),
+                "ports": payload.get("pcap_top_ports"),
+                "tcp_resets": payload.get("pcap_tcp_rst_count"),
+                "homeplug": payload.get("pcap_has_homeplug"),
+                "ipv6": payload.get("pcap_has_ipv6"),
+                "tcp": payload.get("pcap_has_tcp"),
+                "likely_v2g": payload.get("pcap_likely_v2g"),
+                "markers": payload.get("pcap_markers"),
+            }
+        )
+    return rows
+
+
 def run_streamlit_app() -> None:
     try:
         import streamlit as st
@@ -447,6 +477,13 @@ def run_streamlit_app() -> None:
         st.write("Dewesoft CSV: utilises pour comparer les mesures physiques reelles avec les consignes et le meter interne.")
         st.write("Captures: utiles pour documenter visuellement les transitions de consigne, mesures Primara et extractions protocole.")
 
+        st.markdown("### Diagnostic PCAP")
+        pcap_diagnostics = _extract_pcap_diagnostics(session_df)
+        if pcap_diagnostics:
+            st.dataframe(pd.DataFrame(pcap_diagnostics), width="stretch")
+        else:
+            st.info("Aucun diagnostic PCAP detaille disponible.")
+
         with st.expander("Voir le dictionnaire complet de detection"):
             st.json(detected_summary)
 
@@ -525,6 +562,22 @@ def run_streamlit_app() -> None:
                 anomalies[[column for column in ["timestamp", "source", "event_type", "message"] if column in anomalies.columns]],
                 width="stretch",
             )
+
+        st.markdown("### Lecture protocolaire")
+        pcap_diagnostics = _extract_pcap_diagnostics(session_df)
+        if pcap_diagnostics:
+            pcap_frame = pd.DataFrame(pcap_diagnostics)
+            best = pcap_frame.iloc[0].to_dict()
+            st.write(
+                f"PCAP reconnu sur **{best.get('source') or 'source inconnue'}** avec "
+                f"**{best.get('packets') or 0}** paquets, ports **{best.get('ports') or []}**, "
+                f"V2G probable: **{best.get('likely_v2g')}**, resets TCP: **{best.get('tcp_resets')}**."
+            )
+            markers = best.get("markers") or []
+            if markers:
+                st.write("Marqueurs detectes: " + ", ".join(str(marker) for marker in markers[:6]))
+        else:
+            st.info("Aucune lecture protocolaire detaillee n'a ete extraite des PCAP.")
 
         st.markdown("### Dewesoft")
         csv_count = len(detected_summary.get("dewesoft_csv", []))

@@ -186,6 +186,18 @@ def compare_sources(session_df: pd.DataFrame) -> dict:
     if pcap_rows.empty:
         add_evidence(None, "communication", 0.8, "Aucune trace PCAP exploitable dans la timeline.")
         insights.append("Aucune trace PCAP exploitable dans la timeline.")
+    else:
+        pcap_rst_rows = pcap_rows[
+            pcap_rows["message"].str.contains("TCP resets detected", case=False, na=False)
+        ]
+        for _, row in pcap_rst_rows.head(3).iterrows():
+            add_evidence(row, "communication", 1.6, "Resets TCP detectes dans le PCAP.", row.get("message", "")[:120])
+
+        healthy_pcap_rows = pcap_rows[
+            pcap_rows["message"].str.contains("V2G protocol markers detected|HomePlug / SLAC|without reset", case=False, na=False)
+        ]
+        if not healthy_pcap_rows.empty:
+            insights.append("PCAP exploitable: marqueurs V2G / HomePlug / TCP observes.")
 
     if not insights:
         insights.append("Aucune preuve forte: rester prudent.")

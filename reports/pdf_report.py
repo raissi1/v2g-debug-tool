@@ -183,6 +183,35 @@ def generate_pdf_report(
     )
     story.append(Spacer(1, 10))
 
+    pcap_rows: list[dict] = []
+    if not timeline.empty and "payload" in timeline.columns:
+        for _, row in timeline.iterrows():
+            payload = row.get("payload")
+            if not isinstance(payload, dict) or payload.get("parser") != "pcap_generic":
+                continue
+            pcap_rows.append(
+                {
+                    "timestamp": row.get("timestamp"),
+                    "source": row.get("source"),
+                    "message": row.get("message"),
+                    "packets": payload.get("pcap_packet_count"),
+                    "ports": payload.get("pcap_top_ports"),
+                    "tcp_resets": payload.get("pcap_tcp_rst_count"),
+                    "likely_v2g": payload.get("pcap_likely_v2g"),
+                    "markers": payload.get("pcap_markers"),
+                }
+            )
+
+    story.append(Paragraph("Diagnostic PCAP", styles["SectionTitle"]))
+    story.append(
+        _frame_to_table(
+            pd.DataFrame(pcap_rows),
+            ["timestamp", "source", "message", "packets", "ports", "tcp_resets", "likely_v2g", "markers"],
+            "Aucune analyse PCAP detaillee.",
+        )
+    )
+    story.append(Spacer(1, 10))
+
     story.append(Paragraph("Table comparative", styles["SectionTitle"]))
     story.append(
         _frame_to_table(

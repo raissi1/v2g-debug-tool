@@ -221,6 +221,39 @@ def _dewesoft_realtime_section(timeline: pd.DataFrame, detected_summary: dict | 
     return f"<ul>{_to_list_html(stats_lines)}</ul>"
 
 
+def _pcap_diagnostic_section(timeline: pd.DataFrame) -> str:
+    if timeline.empty or "payload" not in timeline.columns:
+        return "<p class=\"empty\">Aucune analyse PCAP detaillee.</p>"
+
+    rows: list[dict] = []
+    for _, row in timeline.iterrows():
+        payload = row.get("payload")
+        if not isinstance(payload, dict) or payload.get("parser") != "pcap_generic":
+            continue
+        rows.append(
+            {
+                "timestamp": row.get("timestamp"),
+                "source": row.get("source"),
+                "message": row.get("message"),
+                "packets": payload.get("pcap_packet_count"),
+                "ports": payload.get("pcap_top_ports"),
+                "tcp_resets": payload.get("pcap_tcp_rst_count"),
+                "likely_v2g": payload.get("pcap_likely_v2g"),
+                "markers": payload.get("pcap_markers"),
+            }
+        )
+
+    if not rows:
+        return "<p class=\"empty\">Aucune analyse PCAP detaillee.</p>"
+
+    return _to_table_html(
+        pd.DataFrame(rows),
+        ["timestamp", "source", "message", "packets", "ports", "tcp_resets", "likely_v2g", "markers"],
+        "Aucune analyse PCAP detaillee.",
+        limit=20,
+    )
+
+
 def generate_html_report(
     summary_lines: list[str],
     diagnostic: dict,
@@ -797,6 +830,15 @@ def generate_html_report(
           <section class="panel">
             <h2>Analyse Dewesoft</h2>
             {_dewesoft_realtime_section(timeline, detected_summary)}
+          </section>
+
+          <section class="panel">
+            <h2>Diagnostic PCAP</h2>
+            <p>
+              Resume automatique des traces reseau: marqueurs V2G, HomePlug / SLAC,
+              ports observes, resets TCP et niveau de confiance protocolaire.
+            </p>
+            {_pcap_diagnostic_section(timeline)}
           </section>
 
           <section class="panel">
