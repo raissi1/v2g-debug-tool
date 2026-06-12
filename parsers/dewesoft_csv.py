@@ -160,7 +160,7 @@ def parse_dewesoft_csv(path: Path) -> tuple[list[Event], pd.DataFrame]:
         }
 
         ts_value = timestamp_series.loc[idx] if idx in timestamp_series.index else pd.NaT
-        ts = ts_value.round("ms").to_pydatetime() if not pd.isna(ts_value) else None
+        ts = ts_value.round("ms").to_pydatetime(warn=False) if not pd.isna(ts_value) else None
 
         if ts_col is not None:
             payload["relative_time_raw"] = row.get(ts_col)

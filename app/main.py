@@ -39,6 +39,12 @@ CAUSE_LABELS = {
 }
 
 
+PLOTLY_CONFIG = {
+    "responsive": True,
+    "displaylogo": False,
+}
+
+
 def _resolve_input_source(
     input_mode: str,
     folder_path: str,
@@ -113,6 +119,13 @@ def _label_classifier_confidence(value: str) -> str:
         "INDETERMINATE": "Indeterminee",
     }
     return mapping.get(str(value or "").upper(), str(value or "Indeterminee"))
+
+
+def _safe_int(value: object) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _inject_premium_css(st) -> None:
@@ -334,6 +347,103 @@ def _inject_premium_css(st) -> None:
             line-height: 1.55;
             font-size: 0.94rem;
         }
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 16px;
+            margin: 14px 0 8px 0;
+        }
+        .status-card {
+            background: rgba(255,255,255,0.92);
+            border: 1px solid rgba(15,23,42,0.08);
+            border-radius: 20px;
+            padding: 18px;
+            box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
+        }
+        .status-card h3 {
+            margin: 0 0 10px 0;
+            font-size: 0.92rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #475569;
+        }
+        .status-card p {
+            margin: 0;
+            color: #0f172a;
+            line-height: 1.55;
+            font-size: 0.98rem;
+        }
+        .status-card ul {
+            margin: 10px 0 0 18px;
+            color: #475569;
+        }
+        .status-card li {
+            margin-bottom: 6px;
+        }
+        .readiness-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 7px 11px;
+            margin: 0 8px 8px 0;
+            border-radius: 999px;
+            background: #eef6ff;
+            border: 1px solid rgba(23, 92, 211, 0.14);
+            color: #1d4ed8;
+            font-size: 0.9rem;
+        }
+        .readiness-pill.warn {
+            background: #fff7ed;
+            border-color: rgba(181, 71, 8, 0.16);
+            color: #b45309;
+        }
+        .readiness-pill.good {
+            background: #ecfdf3;
+            border-color: rgba(2, 122, 72, 0.16);
+            color: #15803d;
+        }
+        .verdict-banner {
+            border-radius: 24px;
+            padding: 20px 22px;
+            margin: 8px 0 12px 0;
+            border: 1px solid rgba(15, 23, 42, 0.08);
+            box-shadow: 0 14px 34px rgba(15, 23, 42, 0.07);
+            background: linear-gradient(135deg, rgba(255,255,255,0.96), rgba(248,250,252,0.95));
+        }
+        .verdict-banner.danger {
+            background: linear-gradient(135deg, #fff1f2, #fff7ed);
+            border-color: rgba(185, 28, 28, 0.14);
+        }
+        .verdict-banner.warn {
+            background: linear-gradient(135deg, #fff7ed, #fffbeb);
+            border-color: rgba(180, 83, 9, 0.14);
+        }
+        .verdict-banner.info {
+            background: linear-gradient(135deg, #eff6ff, #ecfeff);
+            border-color: rgba(29, 78, 216, 0.14);
+        }
+        .verdict-banner h3 {
+            margin: 0;
+            font-size: 1.35rem;
+            color: #0f172a;
+        }
+        .verdict-banner p {
+            margin: 8px 0 0 0;
+            color: #334155;
+            line-height: 1.6;
+        }
+        .tab-section-title {
+            display: inline-block;
+            margin-top: 8px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: rgba(14, 116, 144, 0.08);
+            color: #0f766e;
+            font-size: 0.8rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
         .empty-state {
             background: linear-gradient(180deg, rgba(248,250,220,0.9) 0%, rgba(241,246,214,0.9) 100%);
             border: 1px solid rgba(163, 230, 53, 0.14);
@@ -384,7 +494,8 @@ def _inject_premium_css(st) -> None:
         @media (max-width: 1100px) {
             .hero-grid,
             .landing-grid,
-            .premium-strip {
+            .premium-strip,
+            .status-grid {
                 grid-template-columns: 1fr;
             }
             .premium-hero h1 {
@@ -448,6 +559,89 @@ def _render_detected_files(st, detected_summary: dict) -> None:
         st.warning("Dewesoft brut detecte: present dans la session, mais conversion CSV requise pour exploiter les mesures.")
 
 
+def _render_source_readiness(st, detected_summary: dict) -> None:
+    coverage = detected_summary.get("coverage", {}) or {}
+    dewesoft_coverage = coverage.get("dewesoft", {}) or {}
+    pcap_total = len(detected_summary.get("netlogger_pcaps", [])) + len(detected_summary.get("generic_pcaps", []))
+    pills = [
+        ("good" if len(detected_summary.get("energy_manager", [])) > 0 else "warn", f"EnergyManager: {_safe_int(len(detected_summary.get('energy_manager', [])))}"),
+        ("good" if len(detected_summary.get("charger_app", [])) > 0 else "warn", f"ChargerApp: {_safe_int(len(detected_summary.get('charger_app', [])))}"),
+        ("good" if pcap_total > 0 else "warn", f"PCAP: {pcap_total}"),
+        ("good" if len(detected_summary.get("dewesoft_csv", [])) > 0 else "warn", f"Dewesoft CSV: {_safe_int(len(detected_summary.get('dewesoft_csv', [])))}"),
+        ("warn" if dewesoft_coverage.get("conversion_required", 0) > 0 else "good", f"Conversion Dewesoft requise: {_safe_int(dewesoft_coverage.get('conversion_required', 0))}"),
+    ]
+    html = "".join(f'<span class="readiness-pill {tone}">{label}</span>' for tone, label in pills)
+    st.markdown(f"<div>{html}</div>", unsafe_allow_html=True)
+
+
+def _render_input_status(st, input_mode: str, folder_path: str, uploaded_zip: Any) -> None:
+    if input_mode == "Dossier local":
+        state = folder_path if folder_path else "Aucun dossier selectionne"
+        details = "Le dossier local sera analyse tel quel, sans extraction temporaire."
+    else:
+        state = uploaded_zip.name if uploaded_zip is not None else "Aucun ZIP charge"
+        details = "Le ZIP est extrait temporairement, puis les sources sont detectees automatiquement."
+    st.markdown(
+        f"""
+        <div class="status-card">
+          <h3>Session ciblee</h3>
+          <p><strong>{state}</strong></p>
+          <p style="margin-top:8px;color:#64748b;">{details}</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_empty_analysis_state(st) -> None:
+    st.markdown(
+        """
+        <div class="empty-state">
+          <strong>Aucune analyse disponible</strong>
+          Chargez une session a gauche, puis lancez l'analyse pour afficher le verdict,
+          les preuves inter-sources, le diagnostic PCAP et les rapports exportables.
+        </div>
+        <div class="status-grid">
+          <section class="status-card">
+            <h3>1. Preparer la session</h3>
+            <p>Importer un ZIP complet ou un dossier contenant logs, PCAP, acquisitions Dewesoft et captures.</p>
+          </section>
+          <section class="status-card">
+            <h3>2. Lancer l'analyse</h3>
+            <p>Le pipeline reconstruit la timeline, extrait les signaux utiles et produit un premier verdict automatise.</p>
+          </section>
+          <section class="status-card">
+            <h3>3. Relire le verdict</h3>
+            <p>Verifier la cause probable, le premier ecart, les preuves retenues et la couverture des donnees.</p>
+          </section>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_verdict_banner(st, diagnostic: dict) -> None:
+    cause = str(diagnostic.get("cause_probable", "indetermine")).lower()
+    tone = "info"
+    if cause == "borne":
+        tone = "danger"
+    elif cause == "vehicule":
+        tone = "warn"
+    verdict_label = _label_cause(cause)
+    confidence = diagnostic.get("confidence", "Faible")
+    confidence_score = _safe_int(diagnostic.get("confidence_score", 0))
+    summary = str(diagnostic.get("executive_summary", "") or diagnostic.get("justification", ""))
+    st.markdown(
+        f"""
+        <div class="verdict-banner {tone}">
+          <h3>{verdict_label} | confiance {confidence} ({confidence_score}%)</h3>
+          <p>{summary}</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def _analysis_status_text(step: str) -> str:
     labels = {
         "resolve": "Preparation de la session...",
@@ -505,9 +699,9 @@ def _render_landing_overview(st) -> None:
                 pour localiser l'ecart et produire un rapport presentable.
               </p>
               <div class="hero-band">
-                <span>Logs borne structurés</span>
-                <span>PCAP interpretés</span>
-                <span>Dewesoft comparé aux consignes</span>
+                <span>Logs borne structures</span>
+                <span>PCAP interpretes</span>
+                <span>Dewesoft compare aux consignes</span>
                 <span>Rapport HTML + PDF</span>
               </div>
             </section>
@@ -550,7 +744,7 @@ def _render_landing_overview(st) -> None:
             </section>
             <section class="landing-card">
               <h3>Rapport presentable</h3>
-              <p>Le tableau de bord et les exports HTML/PDF sont pensés pour servir de base a une vraie restitution, pas seulement a un debug brut.</p>
+              <p>Le tableau de bord et les exports HTML/PDF sont penses pour servir de base a une vraie restitution, pas seulement a un debug brut.</p>
             </section>
           </div>
         </div>
@@ -590,11 +784,13 @@ def run_streamlit_app() -> None:
                 size_mb = uploaded_zip.size / (1024 * 1024)
                 st.success(f"ZIP charge: {uploaded_zip.name} ({size_mb:.1f} MB)")
 
+        _render_input_status(st, input_mode, folder_path, uploaded_zip)
         st.caption("Le ZIP peut contenir les logs borne, les traces PCAP et les exports Dewesoft CSV.")
         analyze_clicked = st.button("Analyser la session", type="primary", width="stretch")
 
         if st.session_state.analysis is not None:
             _render_overview_strip(st, st.session_state.analysis["detected_summary"])
+            _render_source_readiness(st, st.session_state.analysis["detected_summary"])
             st.markdown("### Sources detectees")
             _render_detected_files(st, st.session_state.analysis["detected_summary"])
             with st.expander("Voir le detail des fichiers detectes"):
@@ -649,16 +845,7 @@ def run_streamlit_app() -> None:
 
     analysis = st.session_state.analysis
     if analysis is None:
-        st.markdown(
-            """
-            <div class="empty-state">
-              <strong>Aucune analyse disponible</strong>
-              Chargez une session a gauche, puis lancez l'analyse pour afficher le verdict,
-              les preuves inter-sources, le diagnostic PCAP et les rapports exportables.
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        _render_empty_analysis_state(st)
         return
 
     session_df: pd.DataFrame = analysis["session_df"]
@@ -673,6 +860,7 @@ def run_streamlit_app() -> None:
     tabs = st.tabs(["Verdict", "Sources", "Timeline", "Graphes", "Preuves", "Rapport"])
 
     with tabs[0]:
+        st.markdown('<div class="tab-section-title">Vue executive</div>', unsafe_allow_html=True)
         c1, c2, c3, c4 = st.columns(4)
         c5, c6, c7, c8 = st.columns(4)
         c1.metric("Fichiers analyses", metrics["files_analyzed"])
@@ -684,20 +872,8 @@ def run_streamlit_app() -> None:
         c7.metric("PCAP detectes", metrics["pcaps"])
         c8.metric("Mesures detectees", metrics["measures"])
 
-        cause = diagnostic.get("cause_probable", "indetermine")
-        confidence = diagnostic.get("confidence_score", 0)
-        confidence_label = diagnostic.get("confidence", "Faible")
-        verdict_label = _label_cause(cause)
-
         st.subheader("Verdict principal")
-        if cause == "borne":
-            st.error(f"{verdict_label} | confiance {confidence_label} ({confidence}%)")
-        elif cause == "vehicule":
-            st.warning(f"{verdict_label} | confiance {confidence_label} ({confidence}%)")
-        elif cause == "communication":
-            st.info(f"{verdict_label} | confiance {confidence_label} ({confidence}%)")
-        else:
-            st.info(f"{verdict_label} | confiance {confidence_label} ({confidence}%)")
+        _render_verdict_banner(st, diagnostic)
 
         st.markdown("### Lecture metier")
         st.write(diagnostic.get("justification", "Aucune justification disponible."))
@@ -775,8 +951,10 @@ def run_streamlit_app() -> None:
             st.write(readable_summary)
 
     with tabs[1]:
+        st.markdown('<div class="tab-section-title">Couverture des donnees</div>', unsafe_allow_html=True)
         st.subheader("Inventaire des donnees detectees")
         _render_overview_strip(st, detected_summary)
+        _render_source_readiness(st, detected_summary)
         _render_detected_files(st, detected_summary)
 
         st.markdown("### Detail des types de donnees")
@@ -796,6 +974,7 @@ def run_streamlit_app() -> None:
             st.json(detected_summary)
 
     with tabs[2]:
+        st.markdown('<div class="tab-section-title">Chronologie</div>', unsafe_allow_html=True)
         st.subheader("Timeline filtrable")
         if session_df.empty:
             st.info("Timeline vide.")
@@ -820,6 +999,7 @@ def run_streamlit_app() -> None:
             st.dataframe(filtered[visible_columns], width="stretch")
 
     with tabs[3]:
+        st.markdown('<div class="tab-section-title">Courbes et ecarts</div>', unsafe_allow_html=True)
         st.subheader("Graphes physiques")
         has_measure = not timeseries.empty and any(
             column in timeseries.columns and pd.to_numeric(timeseries[column], errors="coerce").notna().any()
@@ -837,11 +1017,16 @@ def run_streamlit_app() -> None:
             ]
         )
         if has_measure:
-            st.plotly_chart(build_signal_figure(timeseries, diagnostic.get("first_divergence")), width="stretch")
+            st.plotly_chart(
+                build_signal_figure(timeseries, diagnostic.get("first_divergence")),
+                width="stretch",
+                config=PLOTLY_CONFIG,
+            )
         else:
             st.info("Aucune mesure exploitable detectee. Importez un export CSV Dewesoft pour activer les graphes physiques.")
 
     with tabs[4]:
+        st.markdown('<div class="tab-section-title">Preuves analytiques</div>', unsafe_allow_html=True)
         st.subheader("Preuves et anomalies")
 
         st.markdown("### Ecarts cles")
@@ -908,6 +1093,7 @@ def run_streamlit_app() -> None:
             st.info("Aucune regle generique evaluee.")
 
     with tabs[5]:
+        st.markdown('<div class="tab-section-title">Exports</div>', unsafe_allow_html=True)
         st.subheader("Rapport HTML")
         components.html(report_html, height=900, scrolling=True)
         st.download_button(
