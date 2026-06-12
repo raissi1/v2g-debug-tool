@@ -188,16 +188,48 @@ def compare_sources(session_df: pd.DataFrame) -> dict:
         insights.append("Aucune trace PCAP exploitable dans la timeline.")
     else:
         pcap_rst_rows = pcap_rows[
-            pcap_rows["message"].str.contains("TCP resets detected", case=False, na=False)
+            pcap_rows["message"].str.contains("TCP resets detected|traffic gap detected", case=False, na=False)
+            | pcap_rows["payload"].apply(
+                lambda payload: isinstance(payload, dict)
+                and (
+                    int(payload.get("pcap_tcp_rst_count", 0) or 0) > 0
+                    or bool(payload.get("pcap_tls_gap_events_s"))
+                )
+            )
         ]
         for _, row in pcap_rst_rows.head(3).iterrows():
-            add_evidence(row, "communication", 1.6, "Resets TCP detectes dans le PCAP.", row.get("message", "")[:120])
+            payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+            if int(payload.get("pcap_tcp_rst_count", 0) or 0) > 0:
+                add_evidence(row, "communication", 1.6, "Resets TCP detectes dans le PCAP.", row.get("message", "")[:120])
+            elif payload.get("pcap_tls_gap_events_s"):
+                add_evidence(row, "communication", 1.4, "Gap important dans le trafic TLS V2G.", payload.get("pcap_tls_gap_events_s"))
 
         healthy_pcap_rows = pcap_rows[
-            pcap_rows["message"].str.contains("V2G protocol markers detected|HomePlug / SLAC|without reset", case=False, na=False)
+            pcap_rows["message"].str.contains("V2G protocol markers detected|HomePlug / SLAC|without reset|SDP response observed|Potential negotiated V2G TCP ports", case=False, na=False)
         ]
         if not healthy_pcap_rows.empty:
             insights.append("PCAP exploitable: marqueurs V2G / HomePlug / TCP observes.")
+        sdp_rows = pcap_rows[
+            pcap_rows["payload"].apply(
+                lambda payload: isinstance(payload, dict) and int(payload.get("pcap_sdp_message_count", 0) or 0) > 0
+            )
+        ]
+        if not sdp_rows.empty:
+            row = sdp_rows.iloc[0]
+            add_evidence(row, "communication", 0.9, "Echange SDP V2G detecte dans le PCAP.", row.get("message", "")[:120])
+            insights.append("Negotiation SDP visible dans le PCAP.")
+
+    dew_raw_rows = work[
+        work["payload"].apply(
+            lambda payload: isinstance(payload, dict)
+            and payload.get("source_group") == "measure"
+            and bool(payload.get("conversion_required"))
+        )
+    ]
+    if not dew_raw_rows.empty:
+        row = dew_raw_rows.iloc[0]
+        add_evidence(row, "vehicule", 0.5, "Mesure Dewesoft brute detectee sans CSV pleinement exploitable.", row.get("message", "")[:120])
+        insights.append("Mesures Dewesoft presentes mais conversion CSV encore necessaire sur une partie des acquisitions.")
 
     if not insights:
         insights.append("Aucune preuve forte: rester prudent.")

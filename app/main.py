@@ -680,6 +680,10 @@ def _extract_pcap_diagnostics(session_df: pd.DataFrame) -> list[dict[str, Any]]:
                 "tcp": payload.get("pcap_has_tcp"),
                 "likely_v2g": payload.get("pcap_likely_v2g"),
                 "markers": payload.get("pcap_markers"),
+                "sdp_messages": payload.get("pcap_sdp_message_count"),
+                "v2g_ports": payload.get("pcap_v2g_candidate_ports"),
+                "tls_gaps_s": payload.get("pcap_tls_gap_events_s"),
+                "tls_phases": payload.get("pcap_tls_phase_count"),
             }
         )
     return rows

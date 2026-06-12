@@ -39,7 +39,21 @@ def _write_test_pcap(path: Path) -> None:
     pkt2 = sll_ipv6 + bytes(ipv6_header) + transport
     rec2 = struct.pack("<IIII", 1_700_000_001, 0, len(pkt2), len(pkt2)) + pkt2
 
-    path.write_bytes(global_header + rec1 + rec2)
+    # Linux cooked header with IPv6 + UDP/15118 SDP response.
+    udp_payload = bytearray(b"\x01\xfe\x90\x01" + b"\x00\x00\x00\x14")
+    udp_payload.extend(bytes.fromhex("fe800000000000000000000000000001"))
+    udp_payload.extend(struct.pack("!HBB", 43153, 0x00, 0x00))
+    udp_header = bytearray(8)
+    struct.pack_into("!HHH", udp_header, 0, 15118, 15118, 8 + len(udp_payload))
+    ipv6_udp = bytearray(40)
+    ipv6_udp[0] = 0x60
+    struct.pack_into("!H", ipv6_udp, 4, len(udp_header) + len(udp_payload))
+    ipv6_udp[6] = 17
+    ipv6_udp[7] = 64
+    pkt3 = sll_ipv6 + bytes(ipv6_udp) + bytes(udp_header) + bytes(udp_payload)
+    rec3 = struct.pack("<IIII", 1_700_000_002, 0, len(pkt3), len(pkt3)) + pkt3
+
+    path.write_bytes(global_header + rec1 + rec2 + rec3)
 
 
 def test_parse_pcap_file_extracts_v2g_markers_and_ports() -> None:
@@ -52,7 +66,7 @@ def test_parse_pcap_file_extracts_v2g_markers_and_ports() -> None:
         assert len(events) >= 3
         summary = events[0]
         assert summary.event_type == "protocol_event"
-        assert summary.payload["pcap_packet_count"] == 2
+        assert summary.payload["pcap_packet_count"] == 3
         assert summary.payload["pcap_link_type"] == 113
         assert summary.payload["pcap_has_homeplug"] is True
         assert summary.payload["pcap_has_ipv6"] is True
@@ -62,3 +76,5 @@ def test_parse_pcap_file_extracts_v2g_markers_and_ports() -> None:
         assert 43153 in summary.payload["pcap_top_ports"]
         assert any("V2G" in marker for marker in summary.payload["pcap_markers"])
         assert any(event.message.startswith("HomePlug / SLAC") for event in events)
+        assert summary.payload["pcap_sdp_message_count"] >= 1
+        assert any("SDP response observed" in event.message for event in events)

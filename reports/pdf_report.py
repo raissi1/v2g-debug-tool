@@ -246,8 +246,11 @@ def generate_pdf_report(
                     "message": row.get("message"),
                     "packets": payload.get("pcap_packet_count"),
                     "ports": payload.get("pcap_top_ports"),
+                    "v2g_ports": payload.get("pcap_v2g_candidate_ports"),
                     "tcp_resets": payload.get("pcap_tcp_rst_count"),
                     "likely_v2g": payload.get("pcap_likely_v2g"),
+                    "sdp_messages": payload.get("pcap_sdp_message_count"),
+                    "tls_gaps_s": payload.get("pcap_tls_gap_events_s"),
                     "markers": payload.get("pcap_markers"),
                 }
             )
@@ -256,7 +259,7 @@ def generate_pdf_report(
     story.append(
         _frame_to_table(
             pd.DataFrame(pcap_rows),
-            ["timestamp", "source", "message", "packets", "ports", "tcp_resets", "likely_v2g", "markers"],
+            ["timestamp", "source", "message", "packets", "ports", "v2g_ports", "tcp_resets", "likely_v2g", "sdp_messages", "tls_gaps_s", "markers"],
             "Aucune analyse PCAP detaillee.",
         )
     )

@@ -29,6 +29,7 @@ def parse_dewesoft_file(path: Path) -> tuple[list[Event], str | None]:
                     "parser": "dewesoft",
                     "source_group": "measure",
                     "conversion_required": False,
+                    "conversion_attempted": str(resolution.get("status")) == "conversion_required",
                     "converted_csv_path": str(converted),
                     "conversion_strategy": str(resolution.get("strategy", "sidecar_csv")),
                     "resolution_status": str(resolution.get("status", "sidecar_csv")),
@@ -41,15 +42,16 @@ def parse_dewesoft_file(path: Path) -> tuple[list[Event], str | None]:
             source=path.name,
             event_type="warning",
             message=str(resolution.get("message") or f"Dewesoft brut detecte, conversion CSV requise ({path.suffix})"),
-            payload={
-                "path": str(path),
-                "parser": "dewesoft",
-                "source_group": "measure",
-                "conversion_required": True,
-                "resolution_status": str(resolution.get("status", "conversion_required")),
-                "conversion_strategy": str(resolution.get("strategy", "missing_csv")),
-            },
-        )
+                payload={
+                    "path": str(path),
+                    "parser": "dewesoft",
+                    "source_group": "measure",
+                    "conversion_required": True,
+                    "conversion_attempted": True,
+                    "resolution_status": str(resolution.get("status", "conversion_required")),
+                    "conversion_strategy": str(resolution.get("strategy", "missing_csv")),
+                },
+            )
         return [event], "Dewesoft brut detecte, conversion CSV requise"
 
     return [], None

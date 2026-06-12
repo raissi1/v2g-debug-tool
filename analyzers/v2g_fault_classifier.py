@@ -79,6 +79,8 @@ def _build_recommendations(cause: str, data_quality: dict[str, bool]) -> list[st
     recommendations: list[str] = []
     if not data_quality.get("dewesoft_csv"):
         recommendations.append("Convertir ou fournir un Dewesoft CSV pour renforcer la preuve physique.")
+    if data_quality.get("dewesoft_conversion_pending"):
+        recommendations.append("Finaliser la conversion des acquisitions Dewesoft brutes encore en attente.")
     if not data_quality.get("pcap"):
         recommendations.append("Ajouter une capture PCAP exploitable pour consolider la partie protocole.")
 
@@ -136,10 +138,18 @@ def classify_v2g_fault(session_df: pd.DataFrame, cross_analysis: dict | None = N
     has_dewesoft = _has_source(df, "measure")
     has_pcap = _has_source(df, "netlogger")
     has_charger_app = _has_source(df, "charger_app")
+    dewesoft_conversion_pending = False
+    if "payload" in df.columns:
+        dewesoft_conversion_pending = bool(
+            df["payload"].apply(
+                lambda payload: isinstance(payload, dict) and bool(payload.get("conversion_required"))
+            ).any()
+        )
     result["data_quality"] = {
         "energy_manager": has_energy_manager,
         "meter_dispatcher": has_meter_dispatcher,
         "dewesoft_csv": has_dewesoft,
+        "dewesoft_conversion_pending": dewesoft_conversion_pending,
         "pcap": has_pcap,
         "charger_app": has_charger_app,
     }
@@ -295,6 +305,48 @@ def classify_v2g_fault(session_df: pd.DataFrame, cross_analysis: dict | None = N
                     raw_log=pcap_rows.iloc[0].get("message", ""),
                 )
             )
+        gap_events = payload.get("pcap_tls_gap_events_s") or []
+        if gap_events:
+            communication_score += 1.4
+            evidence.append(
+                _ev(
+                    "communication",
+                    "pcap_tls_gap",
+                    gap_events[:3],
+                    "Des gaps significatifs apparaissent dans le trafic TLS V2G.",
+                    timestamp=pcap_rows.iloc[0].get("timestamp"),
+                    raw_log=pcap_rows.iloc[0].get("message", ""),
+                )
+            )
+        sdp_messages = payload.get("pcap_sdp_messages") or []
+        if sdp_messages:
+            first_sdp = sdp_messages[0]
+            communication_score += 0.7
+            evidence.append(
+                _ev(
+                    "communication",
+                    "pcap_sdp_exchange",
+                    first_sdp.get("message_type"),
+                    "Le PCAP contient une negotiation SDP exploitable.",
+                    timestamp=pcap_rows.iloc[0].get("timestamp"),
+                    raw_log=pcap_rows.iloc[0].get("message", ""),
+                    details=[
+                        f"security={first_sdp.get('security')}",
+                        f"port={first_sdp.get('server_port')}",
+                    ],
+                )
+            )
+
+    if dewesoft_conversion_pending and not has_dewesoft:
+        vehicule_score += 0.4
+        evidence.append(
+            _ev(
+                "vehicule",
+                "dewesoft_conversion_pending",
+                "conversion pending",
+                "Des acquisitions Dewesoft brutes existent mais ne sont pas encore converties en CSV exploitable.",
+            )
+        )
 
     # Long timeline gaps can also support communication issues.
     if len(df) >= 2:

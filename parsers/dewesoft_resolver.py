@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
 from pathlib import Path
 
 
@@ -31,6 +33,50 @@ def _find_sidecar_csv(path: Path) -> Path | None:
         return fuzzy[0]
 
     return None
+
+
+def _default_converter_script() -> Path:
+    return Path(__file__).resolve().parents[1] / "scripts" / "convert_dewesoft_session.ps1"
+
+
+def _run_external_converter(path: Path) -> None:
+    converter = os.environ.get("V2G_DEWESOFT_CONVERTER", "").strip()
+    if not converter:
+        default_script = _default_converter_script()
+        if default_script.exists():
+            converter = str(default_script)
+        else:
+            return
+
+    converter_path = Path(converter)
+    try:
+        if converter_path.suffix.lower() == ".ps1":
+            if not converter_path.exists():
+                return
+            subprocess.run(
+                [
+                    "powershell",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-File",
+                    str(converter_path),
+                    "-SessionRoot",
+                    str(path.parent),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            return
+
+        subprocess.run(
+            [converter, str(path)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except Exception:
+        return
 
 
 def resolve_dewesoft_source(path: Path) -> dict[str, str | None]:
@@ -71,4 +117,9 @@ def convert_dewesoft_to_csv(path: Path) -> Path | None:
     resolution = resolve_dewesoft_source(path)
     if resolution.get("resolved_csv_path"):
         return Path(str(resolution["resolved_csv_path"]))
+    if path.suffix.lower() in RAW_SUFFIXES:
+        _run_external_converter(path)
+        resolution = resolve_dewesoft_source(path)
+        if resolution.get("resolved_csv_path"):
+            return Path(str(resolution["resolved_csv_path"]))
     return None

@@ -1,5 +1,6 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 import pandas as pd
 
@@ -71,6 +72,26 @@ def test_detected_summary_exposes_dewesoft_coverage_statuses() -> None:
         assert coverage["sidecar_csv"] == 1
         assert coverage["conversion_required"] == 1
         assert len(summary["asset_statuses"]) == 3
+
+
+def test_raw_dewesoft_can_use_configured_external_converter() -> None:
+    with TemporaryDirectory() as td:
+        root = Path(td)
+        raw = root / "Primara_3.d7d"
+        raw.write_text("x")
+        script = root / "fake_converter.ps1"
+        script.write_text("Write-Host 'fake converter'")
+        expected_csv = root / "Primara_3.csv"
+
+        def _fake_run(*args, **kwargs):
+            expected_csv.write_text("time,P\n0,1\n")
+            return None
+
+        with patch("parsers.dewesoft_resolver.subprocess.run", side_effect=_fake_run):
+            with patch.dict("os.environ", {"V2G_DEWESOFT_CONVERTER": str(script)}):
+                converted = convert_dewesoft_to_csv(raw)
+
+        assert converted == expected_csv
 
 
 def test_compare_sources_builds_cross_insights() -> None:
